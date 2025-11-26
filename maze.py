@@ -37,10 +37,10 @@ class Maze:
     }
 
     # Reward values 
-    STEP_REWARD = -1          #TODO
-    GOAL_REWARD =  100         #TODO
-    IMPOSSIBLE_REWARD =  -1e6   #TODO
-    MINOTAUR_REWARD =    -100   #TODO
+    STEP_REWARD = -1
+    GOAL_REWARD = 10
+    IMPOSSIBLE_REWARD = -1e6
+    MINOTAUR_REWARD = -10
 
     def __init__(self, maze):
         """ Constructor of the environment Maze.
@@ -107,7 +107,7 @@ class Maze:
                                         (self.maze[row_player, col_player] == 1)
             
         
-            actions_minotaur = [[0, -1], [0, 1], [-1, 0], [1, 0]] # Possible moves for the Minotaur
+            actions_minotaur = [[0, -1], [0, 1], [-1, 0], [1, 0]]#, [0, 0]] # Possible moves for the Minotaur
             rows_minotaur, cols_minotaur = [], []
             for i in range(len(actions_minotaur)):
                 # Is the minotaur getting out of the limits of the maze?
@@ -213,7 +213,9 @@ class Maze:
 
         return rewards
 
-
+    def get_n_states(self):
+        # get nr of states
+        return int(self.n_states)
 
 
     def simulate(self, start, policy, method):
@@ -231,6 +233,8 @@ class Maze:
             path.append(start) # Add the starting position in the maze to the path
             
             while t < horizon - 1:
+                #if random.random() < 1/30:
+                #    break
                 a = policy[s, t] # Move to next state given the policy and the current state
                 next_states = self.__move(s, a) 
                 next_s = random.choice(next_states)
@@ -243,7 +247,7 @@ class Maze:
             s = self.map[start]
             path.append(start) # Add the starting position in the maze to the path
             next_states = self.__move(s, policy[s]) # Move to next state given the policy and the current state
-            next_s = 0
+            next_s = random.choice(next_states)
             path.append(next_s) # Add the next state to the path
             
             horizon = 20                           # Question e
@@ -251,7 +255,7 @@ class Maze:
             while s != next_s and t <= horizon:
                 s = self.map[next_s] # Update state
                 next_states = self.__move(s, policy[s]) # Move to next state given the policy and the current state
-                next_s = 0
+                next_s = random.choice(next_states)
                 path.append(next_s) # Add the next state to the path
                 t += 1 # Update time for next iteration
         
@@ -280,18 +284,45 @@ def dynamic_programming(env, horizon):
                                     time, dimension S*T
         :return numpy.array policy: Optimal time-varying policy at every state,
                                     dimension S*T
-    """
-    #TODO
 
-    
+        tran_prob (S',S,A) = p(s'|s,a)
+
+        for sT
+        go through all states, compute there rewards
+        for T-1:
+            go through all states s
+            calculate all their rewards based on all actions
+            for each action:
+                sum over all ppossible next state, and take weighted sum of probabilities * previous rewards
+            take the max
+
+        for every t:T
+
+            for every state s:
+                for every action a:
+                    compute V(s') = r(s,a) + sum_s' [p(s'|s,a)*V(s')]
+                V(s,t) = argmax(V(s'))
+                policy(s,t) = argmax(a)
     """
-    S = 10000
-    V = np.random.random_integers(0, 10, (S, T))
+
+    # initialize matrices
+    S = env.n_states
+    V = np.zeros((S, horizon))
+    policy = np.zeros((S, horizon))
+
+    T = horizon - 1
+
+    # compute first round rewards: R(s,a)
+    V[:, T] = np.max(env.rewards, axis=1)
+    policy[:, T] = np.argmax(env.rewards, axis=1)
     
-    policy = np.random.random_integers(0, 4, (S, T))
-    policy = np.ones((S,T))
-    policy = policy*4
-    """
+    # transition probabilities= (S,N,A), V[:,T] = (N,1)
+    for t in range(T-1, -1, -1):
+        future_rewards = np.einsum("sna,n->sa", env.transition_probabilities, V[:, t+1])
+        Q = env.rewards + future_rewards
+
+        V[:, t] = np.max(Q, axis=1)
+        policy[:, t] = np.argmax(Q, axis=1)
     return V, policy
 
 def value_iteration(env, gamma, epsilon):
@@ -304,12 +335,29 @@ def value_iteration(env, gamma, epsilon):
                                     time, dimension S*T
         :return numpy.array policy: Optimal time-varying policy at every state,
                                     dimension S*T
+    
+    Algorithm:
+    while delta < eps(1-lambda)/lambda:
+        Vn+1 = L[Vn]
+        for all states s:
+            for all actions a:
+                Q
+    
     """
-    #TODO
+    S = env.n_states
+    V, policy = np.zeros(S), np.zeros(S)
 
+    delta = 10
+    stop_thresh = epsilon*(1 - gamma) / gamma
 
-
-
+    # transition probabilities = (S,N,A), V_n-1 = (S)
+    while delta > stop_thresh:
+        Q_table = env.rewards + gamma * np.einsum(("sna,n->sa"), env.transition_probabilities, V)
+        max_idxs = np.argmax(Q_table, axis=1)
+        V_next = Q_table[np.arange(S), max_idxs]
+        policy = max_idxs
+        delta = np.linalg.norm(V_next - V)
+        V = V_next        
     return V, policy
 
 
@@ -361,7 +409,6 @@ def animate_solution(maze, path):
 
 if __name__ == "__main__":
 
-    T = 20
     # Description of the maze as a numpy array
     maze = np.array([
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -374,14 +421,30 @@ if __name__ == "__main__":
     # With the convention 0 = empty cell, 1 = obstacle, 2 = exit of the Maze
     
     env = Maze(maze) # Create an environment maze
-    horizon =   T     # TODO: Finite horizon
+    horizon =  20    # TODO: Finite horizon
+    gamma = 1 - 1/30
+    epsilon = 1e-5
 
     # Solve the MDP problem with dynamic programming
-    V, policy = dynamic_programming(env, horizon)  
-
+    #V, policy = dynamic_programming(env, horizon)  
+    print("Computing optimal policy...")
+    V, policy = value_iteration(env, gamma, epsilon)
+    print("Simulating...")
     # Simulate the shortest path starting from position A
-    method = 'DynProg'
+    method = 'ValIter'#'DynProg'
     start  = ((0,0), (6,5))
-    path = env.simulate(start, policy, method)[0]
+
+    NUM_SIMULATIONS = 10
+    NUM_WINS = 0
+    final_states = []
     
+    for i in range(NUM_SIMULATIONS):
+        path = env.simulate(start, policy, method)[0]
+        NUM_WINS += (path[-1] == 'Win')
+    print(f"Probability of winning: {NUM_WINS / NUM_SIMULATIONS}")
+    #env.show()
+    print(f"Final state: {path[-1]} ")
+    print(path[-1])
     animate_solution(maze, path)
+
+
