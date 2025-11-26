@@ -38,13 +38,20 @@ class Maze:
 
     # Reward values 
     STEP_REWARD = -1
-    GOAL_REWARD = 10
+    GOAL_REWARD = 1
+    KEY_REWARD = 100
     IMPOSSIBLE_REWARD = -1e6
-    MINOTAUR_REWARD = -10
+    MINOTAUR_REWARD = -1
+
+    
+
 
     def __init__(self, maze):
         """ Constructor of the environment Maze.
         """
+        self.key_pos                  = (0, 7)
+        self.with_key                 = 1
+        self.allow_mino_stay_still    = 0
         self.maze                     = maze
         self.actions                  = self.__actions()
         self.states, self.map         = self.__states()
@@ -67,14 +74,22 @@ class Maze:
         states = dict()
         map = dict()
         s = 0
+
+        
         for i in range(self.maze.shape[0]):
             for j in range(self.maze.shape[1]):
                 for k in range(self.maze.shape[0]):
                     for l in range(self.maze.shape[1]):
                         if self.maze[i,j] != 1:
-                            states[s] = ((i,j), (k,l))
-                            map[((i,j), (k,l))] = s
-                            s += 1
+                            if self.with_key:
+                                for has_key in range(2):
+                                    states[s] = ((i,j), (k,l), has_key)
+                                    map[((i,j), (k,l), has_key)] = s
+                                    s += 1
+                            else:
+                                states[s] = ((i,j), (k,l))
+                                map[((i,j), (k,l))] = s
+                                s += 1
         
         states[s] = 'Eaten'
         map['Eaten'] = s
@@ -90,8 +105,7 @@ class Maze:
             If the action STAY or an inadmissible action is used, the player stays in place.
         
             :return list of tuples next_state: Possible states ((x,y), (x',y')) on the maze that the system can transition to.
-        """
-        
+        """        
         if self.states[state] == 'Eaten' or self.states[state] == 'Win': # In these states, the game is over
             return [self.states[state]]
         
@@ -106,8 +120,10 @@ class Maze:
                                         (col_player == self.maze.shape[1]) or \
                                         (self.maze[row_player, col_player] == 1)
             
-        
-            actions_minotaur = [[0, -1], [0, 1], [-1, 0], [1, 0]]#, [0, 0]] # Possible moves for the Minotaur
+            # Possible moves for the Minotaur
+            actions_minotaur = [[0, -1], [0, 1], [-1, 0], [1, 0]]
+            if self.allow_mino_stay_still:
+                actions_minotaur.append([0, 0])
             rows_minotaur, cols_minotaur = [], []
             for i in range(len(actions_minotaur)):
                 # Is the minotaur getting out of the limits of the maze?
@@ -133,8 +149,12 @@ class Maze:
                         states.append('Win')
                 
                     else:     # The player remains in place, the minotaur moves randomly
-                        states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i])))
-                
+                        
+                        if self.with_key:
+                            states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
+                        else:
+                            states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i])))
+                        
                 return states
           
             else: # The action is possible, the player and the minotaur both move
@@ -144,17 +164,20 @@ class Maze:
                     if (row_player == rows_minotaur[i]) and (col_player == cols_minotaur[i]):                          # TODO: We met the minotaur
                         states.append('Eaten')
                     
-                    elif(self.maze[row_player, col_player] == 2):                          # TODO:We are at the exit state, without meeting the minotaur
+                    elif (self.maze[row_player, col_player] == 2):                          # TODO:We are at the exit state, without meeting the minotaur
                         states.append('Win')
                     
-                    else: # The player moves, the minotaur moves randomly
+                    elif (self.with_key) and (self.states[state][2] == 0) and (self.states[state][0] == self.key_pos):
+                        states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i]), 1))
+                    
+                    elif self.with_key: # The player moves, the minotaur moves randomly
+                        states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
+
+                    else:
                         states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i])))
               
                 return states
         
-        
-        
-
     def __transitions(self):
         """ Computes the transition probabilities for every state action pair.
             :return numpy.tensor transition probabilities: tensor of transition
@@ -200,13 +223,17 @@ class Maze:
                 
                 elif self.states[s] == 'Win': # The player has won
                     rewards[s, a] = self.GOAL_REWARD
-                
+
                 else:                
                     next_states = self.__move(s,a)
                     next_s = next_states[0] # The reward does not depend on the next position of the minotaur, we just consider the first one
                     
                     if self.states[s][0] == next_s[0] and a != self.STAY: # The player hits a wall
                         rewards[s, a] = self.IMPOSSIBLE_REWARD
+
+                    elif (self.with_key) and (self.states[s][2] == 0) and (next_states[0][2] == 1): # the player picks up the key
+                        #print("KEY REWARD")
+                        rewards[s,a] = self.KEY_REWARD
                     
                     else: # Regular move
                         rewards[s, a] = self.STEP_REWARD
@@ -421,19 +448,24 @@ if __name__ == "__main__":
     # With the convention 0 = empty cell, 1 = obstacle, 2 = exit of the Maze
     
     env = Maze(maze) # Create an environment maze
-    horizon =  20    # TODO: Finite horizon
+    horizon =  50    # TODO: Finite horizon
     gamma = 1 - 1/30
     epsilon = 1e-5
 
-    # Solve the MDP problem with dynamic programming
-    #V, policy = dynamic_programming(env, horizon)  
     print("Computing optimal policy...")
-    V, policy = value_iteration(env, gamma, epsilon)
+    # Solve the MDP problem with dynamic programming
+    V, policy = dynamic_programming(env, horizon)  
+    #V, policy = value_iteration(env, gamma, epsilon)
     print("Simulating...")
     # Simulate the shortest path starting from position A
-    method = 'ValIter'#'DynProg'
-    start  = ((0,0), (6,5))
-
+    #method = 'ValIter'
+    method = 'DynProg'
+    
+    if env.with_key:
+        start = ((0,0), (6,5), 0)
+    else:
+        start  = ((0,0), (6,5))
+        
     NUM_SIMULATIONS = 10
     NUM_WINS = 0
     final_states = []
@@ -441,10 +473,11 @@ if __name__ == "__main__":
     for i in range(NUM_SIMULATIONS):
         path = env.simulate(start, policy, method)[0]
         NUM_WINS += (path[-1] == 'Win')
+    animate_solution(maze, path)
+
     print(f"Probability of winning: {NUM_WINS / NUM_SIMULATIONS}")
     #env.show()
     print(f"Final state: {path[-1]} ")
     print(path[-1])
-    animate_solution(maze, path)
 
 
