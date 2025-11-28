@@ -38,10 +38,10 @@ class Maze:
 
     # Reward values 
     STEP_REWARD = -1
-    GOAL_REWARD = 1
-    KEY_REWARD = 0
+    GOAL_REWARD = 100
+    KEY_REWARD = 50
     IMPOSSIBLE_REWARD = -1e6
-    MINOTAUR_REWARD = -1
+    MINOTAUR_REWARD = -100
 
     
 
@@ -51,8 +51,9 @@ class Maze:
         """
         self.key_pos                  = (0, 7)
         self.with_key                 = 1
-        self.allow_mino_stay_still    = 1
+        self.allow_mino_stay_still    = 0
         self.move_towards             = 0
+        self.move_towards_probability = 0.35
         self.maze                     = maze
         self.actions                  = self.__actions()
         self.states, self.map         = self.__states()
@@ -145,25 +146,27 @@ class Maze:
                     
                     if (self.states[state][0][0] == rows_minotaur[i]) and (self.states[state][0][1] == cols_minotaur[i]):
                         states.append('Eaten')
-                    
+                        #states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
+                        
                     elif self.maze[self.states[state][0][0], self.states[state][0][1]] == 2:                           # We are at the exit state, without meeting the minotaur
    
-                        if (self.with_key):
+                        if (self.with_key): # if state with key
                             
-                            if (self.states[state][2] == 1):
+                            if (self.states[state][2] == 1): # if player has key
                                 states.append('Win')
                             
-                            else:
+                            else: # state is position like usual
                                 states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
                         
-                        else:
+                        else: # if state doesnt have key, player wins instantly
                             states.append('Win')
 
-                    else:     # The player remains in place, the minotaur moves randomly
+                    else: # The player remains in place, the minotaur moves randomly
                         
-                        if self.with_key:
+                        if self.with_key: # update state - with key and positions
                             states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
-                        else:
+                        
+                        else: # update state with only positions
                             states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i])))
                         
                 return states
@@ -174,29 +177,35 @@ class Maze:
                 
                     if (row_player == rows_minotaur[i]) and (col_player == cols_minotaur[i]):                          # TODO: We met the minotaur
                         states.append('Eaten')
-                    
+                        #states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
+
                     elif (self.maze[row_player, col_player] == 2):                          # TODO:We are at the exit state, without meeting the minotaur
                         
                         if self.with_key:
-                            if (self.states[state][2] == 1):
+                            
+                            if (self.states[state][2] == 1): # if player has key
                                 states.append('Win')
-                            else:
+
+                            else: # append state as normal
                                 states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
                     
                         else:
-                            states.append('Win')#states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
+                            states.append('Win') # if state doesnt include key
                     
-                    elif (self.with_key) and (self.states[state][2] == 0) and (self.states[state][0] == self.key_pos):
+                    elif (self.with_key) and (self.states[state][2] == 0) \
+                        and (row_player == self.key_pos[0]) \
+                        and (col_player == self.key_pos[1]):    # if player moves to the key position
+
                         states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i]), 1))
-                    
-                    elif self.with_key: # The player moves, the minotaur moves randomly
+                   
+                    # The player moves, the minotaur moves randomly
+
+                    elif self.with_key: # if key is part of the state
                         states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
 
-                    else:
+                    else: # state doesnt include key
                         states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i])))
-                if not states:
-                        print(self.states[state])
-              
+
                 return states
         
     def __transitions_uniform(self):
@@ -224,9 +233,10 @@ class Maze:
         
         return transition_probabilities
     
-    def __transitions_mixed(self, prob_toward_player=0.65):
+    def __transitions_mixed(self):
         """Minotaur moves toward player with prob_toward_player, 
         otherwise uniformly among valid moves"""
+        prob_toward_player = self.move_towards_probability
         
         dimensions = (self.n_states, self.n_states, self.n_actions)
         transition_probabilities = np.zeros(dimensions)
@@ -309,104 +319,6 @@ class Maze:
                     # Add extra probability if this is the preferred move
                     if mino_next_pos == preferred_pos:
                         transition_probabilities[state_id, next_state_id, action] += prob_toward_player
-        
-        return transition_probabilities
-
-    
-    def __transition_probabilities_toward_player(self):
-        """ Computes the transition probabilities with the minotaur moving towards the player.
-            :return numpy.tensor transition probabilities: tensor of transition
-            probabilities of dimension S*S*A
-        """
-        dimensions = (self.n_states, self.n_states, self.n_actions)
-        transition_probabilities = np.zeros(dimensions)
-        
-        for state_id in self.states:
-            # Handle terminal states
-            if self.states[state_id] == 'Eaten':
-                for action in self.actions:
-                    transition_probabilities[state_id, state_id, action] = 1.0
-                continue
-                
-            if self.states[state_id] == 'Win':
-                for action in self.actions:
-                    transition_probabilities[state_id, state_id, action] = 1.0
-                continue
-            
-            for action in self.actions:
-                # Get current positions
-                player_pos = self.states[state_id][0]
-                mino_pos = self.states[state_id][1]
-                has_key = self.states[state_id][2] if self.with_key else None
-                
-                # Compute next player position
-                row_player = player_pos[0] + self.actions[action][0]
-                col_player = player_pos[1] + self.actions[action][1]
-                
-                # Check if player action is valid
-                impossible_action = (row_player == -1) or \
-                                (row_player == self.maze.shape[0]) or \
-                                (col_player == -1) or \
-                                (col_player == self.maze.shape[1]) or \
-                                (self.maze[row_player, col_player] == 1)
-                
-                if impossible_action:
-                    next_player_pos = player_pos  # Player stays in place
-                else:
-                    next_player_pos = (row_player, col_player)
-                
-                # Update key status if applicable
-                if self.with_key:
-                    if has_key == 0 and next_player_pos == self.key_pos:
-                        next_has_key = 1
-                    else:
-                        next_has_key = has_key
-                
-                # Get all valid minotaur moves (cannot go out of bounds)
-                valid_mino_moves = []
-                for mino_act in [self.MOVE_LEFT, self.MOVE_RIGHT, self.MOVE_UP, self.MOVE_DOWN]:
-                    test_pos = (mino_pos[0] + self.actions[mino_act][0],
-                            mino_pos[1] + self.actions[mino_act][1])
-                    if (0 <= test_pos[0] < self.maze.shape[0] and 
-                        0 <= test_pos[1] < self.maze.shape[1]):
-                        valid_mino_moves.append((mino_act, test_pos))
-                
-                # Determine minotaur's move towards the player's NEXT position
-                preferred_action = self.move_toward_player(mino_pos, next_player_pos)
-                preferred_pos = (mino_pos[0] + self.actions[preferred_action][0],
-                            mino_pos[1] + self.actions[preferred_action][1])
-                
-                # Check if preferred move is valid
-                preferred_valid = (0 <= preferred_pos[0] < self.maze.shape[0] and 
-                                0 <= preferred_pos[1] < self.maze.shape[1])
-                
-                if preferred_valid:
-                    next_mino_pos = preferred_pos
-                else:
-                    # Choose the best alternative from valid moves
-                    # Pick the move that minimizes distance to player
-                    best_dist = float('inf')
-                    next_mino_pos = mino_pos  # fallback
-                    for mino_act, test_pos in valid_mino_moves:
-                        dist = abs(test_pos[0] - next_player_pos[0]) + abs(test_pos[1] - next_player_pos[1])
-                        if dist < best_dist:
-                            best_dist = dist
-                            next_mino_pos = test_pos
-                
-                # Determine the resulting state
-                if next_player_pos == next_mino_pos:
-                    next_state = 'Eaten'
-                elif self.maze[next_player_pos[0], next_player_pos[1]] == 2:
-                    next_state = 'Win'
-                else:
-                    if self.with_key:
-                        next_state = (next_player_pos, next_mino_pos, next_has_key)
-                    else:
-                        next_state = (next_player_pos, next_mino_pos)
-                
-                # Set transition probability
-                next_state_id = self.map[next_state]
-                transition_probabilities[state_id, next_state_id, action] = 1.0
         
         return transition_probabilities
     
@@ -630,21 +542,179 @@ def value_iteration(env, gamma, epsilon):
         V = V_next        
     return V, policy
 
-def Q_learning(env, nr_of_episodes, start_pos):
+
+def Q_learning2(env, nr_of_episodes, start_pos, epsilon, gamma):
     
     # initialize Q(S,A)
-    Q = np.zeros((env.n_states, env.n_actions))
-    path = []
+    T = 50
+    S = env.n_states
+    A = env.n_actions
+
+    Q = np.zeros((S, A))
+    visited_counts = np.zeros((S, A))
+    total_reward_list = []
+    V_start_list = []
+    
+    epsilon_initial = epsilon
+    epsilon_min = 0.01
+    epsilon_decay = 0.9995
 
     for k in range(nr_of_episodes):
-        s = env.map[start]
-        path.append(start)
+        total_reward = 0
+        
+        # Randomize start position
+        if start_pos is None:
+            # Pick a random non-terminal state
+            s = np.random.randint(0, S - 2)  # Exclude 'Eaten' and 'Win' states
+            while env.states[s] in ['Eaten', 'Win']:
+                s = np.random.randint(0, S - 2)
+        else:
+            s = env.map[start_pos]
+        
         t = 0
-        while (is_not_finished(s)):
-            pass
+        
+        while t < T:
+            # select action epsilon-greedily
+            if np.random.random() < epsilon:
+                action = np.random.choice(A)
+            else:
+                action = np.argmax(Q[s,:])
 
-def is_not_finished(state):
+            # observe reward
+            reward = env.rewards[s, action]
+            total_reward += reward
+            
+            # Sample next state
+            next_state_probs = env.transition_probabilities[s, :, int(action)]
+            next_s_id = np.random.choice(S, p=next_state_probs)
+            next_s = env.states[next_s_id]
+            
+            # calculate step size
+            visited_counts[s, action] += 1
+            n = visited_counts[s, action]
+            alpha = 1/(n)**(0.6)  # Less aggressive decay
+
+            # Check if terminal state
+            if is_finished(next_s):
+                # Terminal state: no future value
+                Q[s, action] = Q[s, action] + alpha * (reward - Q[s, action])
+                break
+            else:
+                # Non-terminal: include future value
+                max_next_Q = np.max(Q[next_s_id, :])
+                Q[s, action] = Q[s, action] + alpha * (reward + gamma * max_next_Q - Q[s, action])
+            
+            s = next_s_id
+            t += 1
+        
+        total_reward_list.append(total_reward)
+        
+        # Decay epsilon
+        epsilon = max(epsilon_min, epsilon * epsilon_decay)
+        
+        # Print progress
+        if (k + 1) % 1000 == 0:
+            avg_reward = np.mean(total_reward_list[-1000:])
+            #print(f"Episode {k+1}/{nr_of_episodes}, Avg Reward (last 1000): {avg_reward:.2f}, Epsilon: {epsilon:.4f}")
+
+        V_start_list.append(np.max(Q[env.map[start_pos], :]))
+
+    policy = np.argmax(Q, axis=1)
+    #V = np.max(Q, axis=1)
+        
+    return Q, policy, V_start_list ,total_reward_list
+
+
+def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma):
+    
+    # initialize Q(S,A)
+    T = 50
+    S = env.n_states
+    A = env.n_actions
+
+    #Q = np.random.rand(S, A)
+    
+
+    visited_counts = np.zeros((S, A))
+    total_reward_list = []
+    avg_reward_list = []
+    V_start_list = []
+
+
+    for k in range(nr_of_episodes):
+        total_reward = 0
+        t = 0
+        if np.random.random() < 0.8:
+            s = np.random.choice(S-2)
+        else:
+            s = env.map[start_pos] 
+        while t < T:
+
+            # select action epsilon-greedily
+            if np.random.random() < epsilon:
+                action = np.random.choice(A)
+            else:
+                action = np.argmax(Q[s,:])
+
+            # observe reward
+            reward = env.rewards[s, action]
+            total_reward += reward
+            
+            next_state_probs = env.transition_probabilities[s, :, int(action)]
+
+            # Sample next state according to the probability distribution
+            next_s_id = np.random.choice(S, p=next_state_probs)
+            next_s = env.states[next_s_id]
+            
+            # save states and actions
+            #actions.append(action)
+            #path.append(next_s)
+            
+            
+
+            # calculate step size
+            visited_counts[s, action] += 1
+            n = visited_counts[s, action]
+            
+            step = min(0.5, 10.0 / (10.0 + n))
+            #step = 1/(n)**(2/3)
+
+            if is_finished(next_s):
+                Q[s, action] = Q[s, action] + step * (reward - Q[s, action])
+                break
+
+            # max over actions of Q(s_t+1, a)
+            max_next_Q = np.max(Q[next_s_id, :])
+
+            Q[s, action] = Q[s, action] + step * (reward + gamma * max_next_Q - Q[s, action]) 
+            s = next_s_id
+
+            t += 1
+
+        epsilon = max(0.01, epsilon * 0.9995) 
+
+        if (k + 1) % 1000 == 0:
+            avg_reward = np.mean(total_reward_list[-1000:])
+            #print(f"Episode {k+1}/{nr_of_episodes}, Avg Reward (last 1000): {avg_reward:.2f}, Epsilon: {epsilon:.4f}")
+            avg_reward_list.append(avg_reward)
+
+        total_reward_list.append(total_reward)
+
+        V_start_list.append(np.max(Q[env.map[start_pos], :]))
+
+    policy = np.argmax(Q, axis=1)
+        
+    return Q, policy, avg_reward_list, V_start_list
+
+def is_finished(state):
     return (state == "Eaten") or (state == "Win")
+
+def times_visited_state_action_pair(path, actions, s, a):
+    n = 0
+    for i in range(len(path)):
+        n += (path[i] == s) and (actions[i] == a)
+    return n
+
 
 
 
@@ -707,10 +777,13 @@ if __name__ == "__main__":
     # With the convention 0 = empty cell, 1 = obstacle, 2 = exit of the Maze
     
     env = Maze(maze) # Create an environment maze
+    S = env.n_states
+    A = env.n_actions
+
     horizon =  50    # TODO: Finite horizon
     gamma = 1 - 1/50
-    epsilon = 1e-5
-    nr_of_episodes = 10
+    epsilon = 0.3
+    nr_of_episodes = 50000
 
     print("Computing optimal policy...")
     
@@ -718,10 +791,10 @@ if __name__ == "__main__":
     #V, policy = dynamic_programming(env, horizon)  
     #V, policy = value_iteration(env, gamma, epsilon)
     
-    print("Simulating...")
+    
 
     # Simulate the shortest path starting from position A
-    #method = 'ValIter'
+    method = 'ValIter'
     #method = 'DynProg'
     
     if env.with_key:
@@ -729,22 +802,39 @@ if __name__ == "__main__":
     else:
         start  = ((0,0), (6,5))
 
-    Q = Q_learning(env, nr_of_episodes, start)
-        
+    Q = np.ones((S, A))
+    #Q = np.load("pretrained_Q.npy")
+
+    Q, policy, rewards, V_starts = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma)
+    #np.save("pretrained_Q", Q)
+
+    np.save("latest_policy", policy)
+
+    print("Simulating...")
+    
     NUM_SIMULATIONS = 10000
     NUM_WINS = 0
     final_states = []
     
-    """
     for i in range(NUM_SIMULATIONS):
         path = env.simulate(start, policy, method)[0]
         NUM_WINS += (path[-1] == 'Win')
-    #animate_solution(maze, path)
+        #animate_solution(maze, path)
+    plt.figure(1)
+    plt.title("Rewards")
+    plt.plot(rewards)
+    plt.figure(2)
+    plt.title("Value function")
+    plt.plot(V_starts)
+    plt.show()
+
+    
 
     print(f"Probability of winning: {NUM_WINS / NUM_SIMULATIONS}")
     #env.show()
     print(f"Final state: {path[-1]} ")
     print(path[-1])
-    """
+    
+    
 
 
