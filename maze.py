@@ -50,9 +50,9 @@ class Maze:
         """ Constructor of the environment Maze.
         """
         self.key_pos                  = (0, 7)
-        self.with_key                 = 1
+        self.with_key                 = 0
         self.allow_mino_stay_still    = 0
-        self.move_towards             = 1
+        self.move_towards             = 0
         self.move_towards_probability = 0.35
         self.maze                     = maze
         self.actions                  = self.__actions()
@@ -546,7 +546,7 @@ def value_iteration(env, gamma, epsilon):
     return V, policy
 
 
-def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
+def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, SARSA=False, debug=False):
     
     # initialize Q(S,A)
     T = 50
@@ -558,7 +558,7 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
     total_reward_list = []
     avg_reward_list = []
     V_start_list = []
-
+    SARSA = False
 
     for k in range(nr_of_episodes):
         total_reward = 0
@@ -594,16 +594,16 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             #step = min(0.5, 10.0 / (10.0 + n))
             step = 1/(n)**(2/3)
 
-            # if episode is over, max_next_Q should be zero
+            # if episode is over, next_V should be zero
             if is_finished(next_s):
                 Q[s, action] = Q[s, action] + step * (reward - Q[s, action])
                 break
-
-            # max over actions of Q(s_t+1, a)
-            max_next_Q = np.max(Q[next_s_id, :])
+            
+            # next V max of Q over all possible actions
+            next_V = np.max(Q[next_s_id, :])
 
             # update Q
-            Q[s, action] = Q[s, action] + step * (reward + gamma * max_next_Q - Q[s, action]) 
+            Q[s, action] = Q[s, action] + step * (reward + gamma * next_V - Q[s, action]) 
             
             s = next_s_id
             t += 1
@@ -626,17 +626,90 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
         
     return Q, policy, avg_reward_list, V_start_list
 
+def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
+    
+    # initialize Q(S,A)
+    T = 50
+    S = env.n_states
+    A = env.n_actions
+
+    visited_counts = np.zeros((S, A))
+    total_reward_list = []
+    avg_reward_list = []
+    V_start_list = []
+
+    for k in range(nr_of_episodes):
+        total_reward = 0
+        t = 0
+
+        if np.random.random() < -1:
+            s = np.random.choice(S-3) # exclude terminal and win/lose states
+
+        else:
+            s = env.map[start_pos] 
+
+        # initialize action epsilon-greedily
+        if np.random.random() < epsilon:
+            action = np.random.choice(A)
+        else:
+            action = np.argmax(Q[s,:])
+
+        while t < T:
+            
+            # observe reward
+            reward = env.rewards[s, action]
+            total_reward += reward
+            
+            next_state_probs = env.transition_probabilities[s, :, int(action)]
+
+            # Sample next state according to the probability distribution
+            next_s_id = np.random.choice(S, p=next_state_probs)
+            next_s = env.states[next_s_id]
+
+            # calculate step size
+            visited_counts[s, action] += 1
+            n = visited_counts[s, action]
+            
+            step = min(0.5, 10.0 / (10.0 + n))
+            #step = 1/(n)**(2/3)
+
+            # if episode is over, next_V should be zero
+            if is_finished(next_s):
+                Q[s, action] = Q[s, action] + step * (reward - Q[s, action])
+                break
+
+            if  np.random.random() < epsilon:
+                next_action = np.random.choice(A)
+            else:
+                next_action = np.argmax(Q[next_s_id, :])
+
+            # update Q
+            Q[s, action] = Q[s, action] + step * (reward + gamma * Q[next_s_id, next_action] - Q[s, action]) 
+            
+            s = next_s_id
+            action = next_action
+            t += 1
+
+        # epsilon decay
+        epsilon = max(0.01, epsilon * 0.99995) 
+
+        # saves average rewards 
+        if (k + 1) % 1000 == 0:
+            avg_reward = np.mean(total_reward_list[-1000:])
+            avg_reward_list.append(avg_reward)
+            
+            if debug:
+                print(f"Episode {k+1}/{nr_of_episodes}, Avg Reward (last 1000): {avg_reward:.2f}, Epsilon: {epsilon:.4f}")
+
+        total_reward_list.append(total_reward)
+        V_start_list.append(np.max(Q[env.map[start_pos], :]))
+
+    policy = np.argmax(Q, axis=1)
+        
+    return Q, policy, avg_reward_list, V_start_list
+
 def is_finished(state):
     return state == "Terminal" 
-    
-def times_visited_state_action_pair(path, actions, s, a):
-    n = 0
-    for i in range(len(path)):
-        n += (path[i] == s) and (actions[i] == a)
-    return n
-
-
-
 
 def animate_solution2(maze, path):
 
@@ -799,7 +872,8 @@ if __name__ == "__main__":
     Q = np.ones((S, A))
     #Q = np.load("pretrained_Q.npy")
 
-    Q, policy, rewards, V_starts = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma)
+    #Q, policy, rewards, V_starts = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma)
+    Q, policy, rewards, V_starts = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma)
     #np.save("pretrained_Q", Q)
 
     #np.save("latest_policy", policy)
