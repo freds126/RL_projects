@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import time
 from IPython import display
 import random
+import os
+import shutil
 
 # Implemented methods
 methods = ['DynProg', 'ValIter']
@@ -35,13 +37,20 @@ class Maze:
         MOVE_UP: "move up",
         MOVE_DOWN: "move down"
     }
-
+    sparse_rewards = True
     # Reward values 
-    STEP_REWARD = -1
-    GOAL_REWARD = 100
-    KEY_REWARD = 50
-    IMPOSSIBLE_REWARD = -1e6
-    MINOTAUR_REWARD = -100
+    if sparse_rewards:
+        STEP_REWARD = 0
+        GOAL_REWARD = 1
+        KEY_REWARD = 0
+        IMPOSSIBLE_REWARD = -1e6
+        MINOTAUR_REWARD = 0
+    else:
+        STEP_REWARD = -1
+        GOAL_REWARD = 100
+        KEY_REWARD = 100
+        IMPOSSIBLE_REWARD = -1e6
+        MINOTAUR_REWARD = -100
 
     
 
@@ -50,9 +59,9 @@ class Maze:
         """ Constructor of the environment Maze.
         """
         self.key_pos                  = (0, 7)
-        self.with_key                 = 0
+        self.with_key                 = 1
         self.allow_mino_stay_still    = 0
-        self.move_towards             = 0
+        self.move_towards             = 1
         self.move_towards_probability = 0.35
         self.maze                     = maze
         self.actions                  = self.__actions()
@@ -154,7 +163,6 @@ class Maze:
                     
                     if (self.states[state][0][0] == rows_minotaur[i]) and (self.states[state][0][1] == cols_minotaur[i]):
                         states.append('Eaten')
-                        #states.append(((self.states[state][0][0], self.states[state][0][1]), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
                         
                     elif self.maze[self.states[state][0][0], self.states[state][0][1]] == 2:                           # We are at the exit state, without meeting the minotaur
    
@@ -185,7 +193,6 @@ class Maze:
                 
                     if (row_player == rows_minotaur[i]) and (col_player == cols_minotaur[i]):                          # TODO: We met the minotaur
                         states.append('Eaten')
-                        #states.append(((row_player, col_player), (rows_minotaur[i], cols_minotaur[i]), self.states[state][2]))
 
                     elif (self.maze[row_player, col_player] == 2):                          # TODO:We are at the exit state, without meeting the minotaur
                         
@@ -362,38 +369,19 @@ class Maze:
                 elif self.states[s] == 'Terminal':
                     rewards[s, a] = 0
 
-                else:                
+                else:                                  
                     next_states = self.__move(s,a)
-                    yeah = False
-
                     next_s = next_states[0] # The reward does not depend on the next position of the minotaur, we just consider the first one
                     
-                    if "Eaten" in next_states:
-                        #print(f"Eaten in next state at state {s}, action {a}")
-                        #print(next_s)
-                        yeah = False
-                    elif "Win" in next_states:
-                        #print(f"Win in next state at state {s}, action {a}")
-                        #print(next_s)
-                        yeah = False
-
                     if self.states[s][0] == next_s[0] and a != self.STAY: # The player hits a wall
                         rewards[s, a] = self.IMPOSSIBLE_REWARD
-                        if yeah:
-                            print(f"Impossible Reward given when next_s is Eaten or Win at state {s}, action {a}")
 
                     elif (self.with_key and self.states[s][2] == 0 and 
                         next_s[2] == 1): # the player picks up the key
-                        #print(f"KEY REWARD at state {s}, action {a}")
                         rewards[s,a] = self.KEY_REWARD
-                        if yeah:
-                            print(f"Key Reward given when next_s is Eaten or Win at state {s}, action {a}")
-                    
+      
                     else: # Regular move
                         rewards[s, a] = self.STEP_REWARD
-                        if yeah:
-                            print(f"Step Reward given when next_s is Eaten or Win at state {s}, action {a}")
-                    
 
         return rewards
 
@@ -531,9 +519,10 @@ def value_iteration(env, gamma, epsilon):
     """
     S = env.n_states
     V, policy = np.zeros(S), np.zeros(S)
-
+    start = ((0,0), (6, 5))
     delta = 10
     stop_thresh = epsilon*(1 - gamma) / gamma
+    V_starts = []
 
     # transition probabilities = (S,N,A), V_n-1 = (S)
     while delta > stop_thresh:
@@ -543,11 +532,13 @@ def value_iteration(env, gamma, epsilon):
         policy = max_idxs
         delta = np.linalg.norm(V_next - V)
         V = V_next        
-    return V, policy
+        V_starts.append(V[env.map[start]])
+
+    return V, policy, V_starts
 
 
-def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, SARSA=False, debug=False):
-    
+def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
+    print("Q-Learning....")
     # initialize Q(S,A)
     T = 50
     S = env.n_states
@@ -558,7 +549,6 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, SARSA=False, d
     total_reward_list = []
     avg_reward_list = []
     V_start_list = []
-    SARSA = False
 
     for k in range(nr_of_episodes):
         total_reward = 0
@@ -595,7 +585,7 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, SARSA=False, d
             step = 1/(n)**(2/3)
 
             # if episode is over, next_V should be zero
-            if is_finished(next_s):
+            if is_finishedQ(next_s):
                 Q[s, action] = Q[s, action] + step * (reward - Q[s, action])
                 break
             
@@ -627,8 +617,8 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, SARSA=False, d
     return Q, policy, avg_reward_list, V_start_list
 
 def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
+    print("SARSA.........")
     
-    # initialize Q(S,A)
     T = 50
     S = env.n_states
     A = env.n_actions
@@ -636,13 +626,13 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
     visited_counts = np.zeros((S, A))
     total_reward_list = []
     avg_reward_list = []
-    V_start_list = []
+    V_start_list = []   
 
-    for k in range(nr_of_episodes):
+    for k in range(1, nr_of_episodes):
         total_reward = 0
         t = 0
 
-        if np.random.random() < -1:
+        if np.random.random() < 0.5:
             s = np.random.choice(S-3) # exclude terminal and win/lose states
 
         else:
@@ -670,11 +660,19 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             visited_counts[s, action] += 1
             n = visited_counts[s, action]
             
-            step = min(0.5, 10.0 / (10.0 + n))
-            #step = 1/(n)**(2/3)
+            #step = min(0.5, 10.0 / (10.0 + n))
+            step = 1/((n)**(0.5))
 
             # if episode is over, next_V should be zero
-            if is_finished(next_s):
+            if is_finishedSARSA(next_s):
+                check_reward = env.rewards[next_s_id, 0] # doesnt matter which action, will always return GOAL_REWARD or MINOTAUR_REWARD
+                if next_s == 'Eaten':
+                    reward = env.MINOTAUR_REWARD
+                elif next_s == 'Win':
+                    reward = env.GOAL_REWARD
+                if reward != check_reward:
+                    print("wrong!!")
+                
                 Q[s, action] = Q[s, action] + step * (reward - Q[s, action])
                 break
 
@@ -691,15 +689,15 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             t += 1
 
         # epsilon decay
-        epsilon = max(0.01, epsilon * 0.99995) 
+        epsilon =  1/(k**(0.9))
 
         # saves average rewards 
-        if (k + 1) % 1000 == 0:
+        if k % 1000 == 0:
             avg_reward = np.mean(total_reward_list[-1000:])
             avg_reward_list.append(avg_reward)
             
             if debug:
-                print(f"Episode {k+1}/{nr_of_episodes}, Avg Reward (last 1000): {avg_reward:.2f}, Epsilon: {epsilon:.4f}")
+                print(f"Episode {k}/{nr_of_episodes}, Avg Reward (last 1000): {avg_reward:.2f}, Epsilon: {epsilon:.4f}")
 
         total_reward_list.append(total_reward)
         V_start_list.append(np.max(Q[env.map[start_pos], :]))
@@ -708,53 +706,21 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
         
     return Q, policy, avg_reward_list, V_start_list
 
-def is_finished(state):
+def is_finishedQ(state):
     return state == "Terminal" 
 
-def animate_solution2(maze, path):
+def is_finishedSARSA(state):
+    return (state == "Win" or state == "Eaten")
 
-    # Map a color to each cell in the maze
-    col_map = {0: WHITE, 1: BLACK, 2: LIGHT_GREEN, -1: LIGHT_RED, -2: LIGHT_PURPLE}
-    
-    rows, cols = maze.shape # Size of the maze
-    fig = plt.figure(1, figsize=(cols, rows)) # Create figure of the size of the maze
+def animate_solution(maze, path, save_figs = False):
+    if save_figs:
+        # Create/reset directory for saving frames
+        save_dir = "policy_frames"
+        if os.path.exists(save_dir):
+            shutil.rmtree(save_dir)        # delete old frames
+        os.makedirs(save_dir)               # new empty folder
 
-    # Remove the axis ticks and add title
-    ax = plt.gca()
-    ax.set_title('Policy simulation')
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-    # Give a color to each cell
-    colored_maze = [[col_map[maze[j, i]] for i in range(cols)] for j in range(rows)]
-
-    # Create a table to color
-    grid = plt.table(
-        cellText = None, 
-        cellColours = colored_maze, 
-        cellLoc = 'center', 
-        loc = (0,0), 
-        edges = 'closed'
-    )
-    
-    # Modify the height and width of the cells in the table
-    tc = grid.properties()['children']
-    for cell in tc:
-        cell.set_height(1.0/rows)
-        cell.set_width(1.0/cols)
-
-    for i in range(1, len(path)):
-        if path[i-1] != 'Eaten' and path[i-1] != 'Win' and path[i-1] != 'Terminal':
-            grid.get_celld()[(path[i-1][0])].set_facecolor(col_map[maze[path[i-1][0]]])
-            grid.get_celld()[(path[i-1][1])].set_facecolor(col_map[maze[path[i-1][1]]])
-        if path[i] != 'Eaten' and path[i] != 'Win'and path[i] != 'Terminal':
-            grid.get_celld()[(path[i][0])].set_facecolor(col_map[-2]) # Position of the player
-            grid.get_celld()[(path[i][1])].set_facecolor(col_map[-1]) # Position of the minotaur
-        display.display(fig)
-        time.sleep(0.1)
-        display.clear_output(wait = True)
-
-def animate_solution(maze, path):
+        frame_id = 0
     # Map a color to each cell in the maze
     col_map = {
         0:  WHITE,        # empty cell
@@ -827,8 +793,12 @@ def animate_solution(maze, path):
 
         # Re-display the SAME figure
         display.display(fig)
-        time.sleep(0.1)
 
+        if save_figs:
+            # Save each frame (overwrite numbering each run)
+            fig.savefig(f"{save_dir}/frame_{frame_id:03d}.png", dpi=120, bbox_inches="tight")
+            frame_id += 1
+        time.sleep(0.1)
 
 if __name__ == "__main__":
 
@@ -847,36 +817,60 @@ if __name__ == "__main__":
     S = env.n_states
     A = env.n_actions
 
-    horizon =  50    # TODO: Finite horizon
-    gamma = 1 - 1/50
-    epsilon = 0.3
+    horizon =  50    # Finite horizon
+    gamma = 1 - 1/horizon
+    epsilon = 0.1
     nr_of_episodes = 50000
 
     print("Computing optimal policy...")
-    
-    # Solve the MDP problem with dynamic programming
-    #V, policy = dynamic_programming(env, horizon)  
-    #V, policy = value_iteration(env, gamma, epsilon)
-    
-    
 
-    # Simulate the shortest path starting from position A
-    method = 'ValIter'
-    #method = 'DynProg'
-    
     if env.with_key:
         start = ((0,0), (6,5), 0)
     else:
         start  = ((0,0), (6,5))
 
+    plot = False
+
+    if plot:
+        V_0s = []
+
+        # Solve the MDP problem with dynamic programming
+
+        for i in range(horizon):
+            V, policy = dynamic_programming(env, i+1)
+            V_0s.append(V[env.map[start], 0])
+        
+        Ts = np.arange(1, horizon + 1)
+
+        plt.figure()
+        plt.plot(Ts, V_0s, marker='o', linewidth=2)
+        plt.xlabel("Horizon $T$", size = 22)
+        plt.ylabel("Probability of exiting alive", size = 22)
+        plt.ylim(0, 1.05)
+        plt.grid(True, alpha=0.3)
+        plt.title("Exit probability vs horizon", size =22)
+        plt.tight_layout()
+        
+        #plt.savefig("win_prob_stay.png") 
+        plt.show()
+
+    #V, policy = dynamic_programming(env, horizon)
+    #V, policy, V_starts = value_iteration(env, gamma, epsilon)
+    
+    # Simulate the shortest path starting from position A
+    method = 'ValIter'
+    #method = 'DynProg'
+
     Q = np.ones((S, A))
+    #Q[env.map['Win'], :] = 100
+    #Q[env.map['Eaten'], :] = -100
     #Q = np.load("pretrained_Q.npy")
 
     #Q, policy, rewards, V_starts = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma)
-    Q, policy, rewards, V_starts = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma)
+    Q, policy, rewards, V_starts = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma, debug=False)
     #np.save("pretrained_Q", Q)
 
-    #np.save("latest_policy", policy)
+    np.save("latest_policy", policy)
     #policy = np.load("latest_policy.npy")
 
     print("Simulating...")
@@ -888,20 +882,26 @@ if __name__ == "__main__":
     for i in range(NUM_SIMULATIONS):
         path = env.simulate(start, policy, method)[0]
         NUM_WINS += ('Win' in path)
-        #animate_solution(maze, path)
+        #animate_solution(maze, path, save_figs=False)
     
-    #plt.figure(1)
-    #plt.title("Rewards")
-    #plt.plot(rewards)
-    plt.figure(2)
-    plt.title("Value function")
-    plt.plot(V_starts)
-    plt.show()
-    
+    plot_reward = True
+    if plot_reward:
+        print(len(V_starts))
+        plt.figure()
+        plt.plot(V_starts, marker='o', linewidth=2)
+        plt.xlabel("Iterations $i$", size = 22)
+        plt.ylabel("Value function $V(s_0)$", size = 22)
+        #plt.ylim(0, 1.05)
+        plt.grid(True, alpha=0.3)
+        plt.title("$V(s_0)$ computed with VI", size = 22)
+        plt.tight_layout()
+        
+        #plt.savefig("V_Start_VI_30.png") 
+        plt.show()
+
     
     print(f"Probability of winning: {NUM_WINS / NUM_SIMULATIONS}")
- 
-    
-    
+    #print(f"V_start: {np.max(V[env.map[start]])}")
+
 
 
