@@ -616,7 +616,7 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
         
     return Q, policy, avg_reward_list, V_start_list
 
-def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
+def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, step_decay=0.5, eps_decay=0.9, debug=False):
     print("SARSA.........")
     
     T = 50
@@ -661,18 +661,11 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             n = visited_counts[s, action]
             
             #step = min(0.5, 10.0 / (10.0 + n))
-            step = 1/((n)**(0.5))
+            step = 1/((n)**(step_decay))
 
             # if episode is over, next_V should be zero
             if is_finishedSARSA(next_s):
-                check_reward = env.rewards[next_s_id, 0] # doesnt matter which action, will always return GOAL_REWARD or MINOTAUR_REWARD
-                if next_s == 'Eaten':
-                    reward = env.MINOTAUR_REWARD
-                elif next_s == 'Win':
-                    reward = env.GOAL_REWARD
-                if reward != check_reward:
-                    print("wrong!!")
-                
+                reward = env.rewards[next_s_id, 0] # doesnt matter which action, will always return GOAL_REWARD or MINOTAUR_REWARD
                 Q[s, action] = Q[s, action] + step * (reward - Q[s, action])
                 break
 
@@ -689,7 +682,7 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             t += 1
 
         # epsilon decay
-        epsilon =  1/(k**(0.9))
+        epsilon =  1/(k**(eps_decay))
 
         # saves average rewards 
         if k % 1000 == 0:
@@ -870,12 +863,12 @@ if __name__ == "__main__":
     Q, policy, rewards, V_starts = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma, debug=False)
     #np.save("pretrained_Q", Q)
 
-    np.save("latest_policy", policy)
+    #np.save("latest_policy", policy)
     #policy = np.load("latest_policy.npy")
 
     print("Simulating...")
     
-    NUM_SIMULATIONS = 10000
+    NUM_SIMULATIONS = 10
     NUM_WINS = 0
     final_states = []
     
