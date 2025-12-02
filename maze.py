@@ -616,7 +616,7 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
         
     return Q, policy, avg_reward_list, V_start_list
 
-def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
+def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, step_decay=0.5, eps_decay=0.9, debug=False):
     print("SARSA.........")
     
     T = 50
@@ -661,7 +661,7 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             n = visited_counts[s, action]
             
             #step = min(0.5, 10.0 / (10.0 + n))
-            step = 1/((n)**(0.5))
+            step = 1/((n)**(step_decay))
 
             # if episode is over, next_V should be zero
             if is_finishedSARSA(next_s):
@@ -689,7 +689,7 @@ def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             t += 1
 
         # epsilon decay
-        epsilon =  1/(k**(0.9))
+        epsilon =  1/(k**(eps_decay))
 
         # saves average rewards 
         if k % 1000 == 0:
