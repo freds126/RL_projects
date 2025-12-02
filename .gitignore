@@ -2,3 +2,4 @@ __pycache__/
 *.png
 policy_frames/
 *.ipynb_checkpoints
+*venv/
