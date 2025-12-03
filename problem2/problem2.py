@@ -5,7 +5,7 @@
 # Load packages
 import numpy as np
 import gymnasium as gym
-import torch
+#import torch
 import matplotlib.pyplot as plt
 
 import numpy as np
@@ -47,7 +47,7 @@ def scale_state_variables(s, low=env.observation_space.low, high=env.observation
     x = (s - low) / (high - low)
     return x
 
-def softmax_exploration(Q_s, temperature=1.0):
+def softmax_exploration(Q_s, temperature=0.5):
     """
     Strategy 2: Softmax (Boltzmann) Exploration
     Select actions probabilistically based on Q-values
@@ -263,7 +263,7 @@ v = np.zeros((k, N))
 m = 0.1
 
 eps_decay = 0.8
-step_decay_thresh = -140
+step_decay_thresh = -145
 alpha_decay = 0.7
 
 Train = True
@@ -271,7 +271,7 @@ total_episode_reward_avg = 0
 
 reward_alphas = []
 
-exploration_strategy = 'epsilon_greedy'
+exploration_strategy = 'softmax'
   
 if exploration_strategy == 'softmax':
     strategy_params = {
@@ -291,14 +291,21 @@ elif exploration_strategy == 'epsilon_greedy':
     }
 
 #alpha_values = np.logspace(-4, -0.3, 5)
-alpha_values = [0.001, 0.01, 0.1, 0.3, 0.5]
+alpha_values = [0.001, 0.01, 0.05, 0.1, 0.3]
 lambda_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
-# e.g. 0.0001, 0.0003, 0.001, ..., 0.1
 
-alpha = 0.01
-for alpha in alpha_values:
+
+#alpha_start = 0.01
+#lambda_ = 0.8
+
+#for alpha_start in alpha_values:
 #for lambda_ in lambda_values:
+for i in range(1,2):
+    alpha = np.ones((N,)) * alpha_start
+
+    L2_norm = np.linalg.norm(eta, axis=1)
+    alpha = alpha/(L2_norm + (L2_norm == 0)) 
     if Train:
         # Training process
         action_counts = {}
@@ -382,13 +389,13 @@ for alpha in alpha_values:
                 action = next_action
 
             if total_episode_reward > step_decay_thresh:
-                pass#alpha *= alpha_decay
+                alpha *= alpha_decay
 
             # Append episode reward
             episode_reward_list.append(total_episode_reward)
 
             # Close environment
-            env.close()
+    env.close()
 
 
     import pickle
@@ -400,8 +407,44 @@ for alpha in alpha_values:
         if save:
             pickle.dump(data, f)
     reward_alphas.append(evaluate())
-plt.plot(alpha_values, reward_alphas)
+
+#evaluate()
+plot_lambda_alpha = False
+if plot_lambda_alpha:
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    alpha_values = [0.001, 0.01, 0.05, 0.1, 0.3]   # example
+    xs = np.arange(len(alpha_values))
+
+    plt.figure(figsize=(6,4))
+    plt.plot(xs, reward_alphas, marker='o', linewidth=2)
+
+    plt.xticks(xs, lambda_values)  # show the alphas as labels
+    plt.xlabel(r"Eligibility trace  $\lambda$", fontsize=12)
+    plt.ylabel("Average total reward", fontsize=12)
+    plt.title("Effect of Eligibility trace on Average Return", fontsize=14)
+
+    CONFIDENCE_PASS = -135
+    plt.axhline(CONFIDENCE_PASS, linestyle='--', color='red')
+
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("rewards-lambdas.png")
+    plt.show()
+
+
+# Plot Rewards
+plt.plot([i for i in range(1, N_episodes+1)], episode_reward_list, label='Episode reward')
+plt.plot([i for i in range(1, N_episodes+1)], running_average(episode_reward_list, 10), label='Average episode reward')
+plt.xlabel('Episodes')
+plt.ylabel('Total reward')
+plt.title('Total Reward vs Episodes with Softmax')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.savefig("reward-epsilon-softmax.png")
 plt.show()
+
 
 
 plot = False
@@ -415,6 +458,7 @@ if plot:
     plt.title('Total Reward vs Episodes')
     plt.legend()
     plt.grid(alpha=0.3)
+    plt.savefig("reward-episodes.png")
     plt.show()
 
     def phi(s):
@@ -459,6 +503,7 @@ if plot:
     ax.set_ylabel('Velocity')
     ax.set_zlabel('V(s) = max_a Q(s,a)')
     ax.set_title('Approximate Value Function of Learned Policy')
+    plt.savefig("Value_func.png")
     plt.show()
 
     policy = np.zeros((n_vel, n_pos))
@@ -476,6 +521,7 @@ if plot:
     ax.set_ylabel('Velocity')
     ax.set_zlabel('Action (0=left,1=none,2=right)')
     ax.set_title('Optimal Policy over State Space')
+    plt.savefig("3d-policy.png")
     plt.show()
 
     plt.figure()
@@ -485,6 +531,7 @@ if plot:
     plt.xlabel('Position')
     plt.ylabel('Velocity')
     plt.title('Optimal Policy (argmax_a Q)')
+    plt.savefig("2d-policy.png")
     plt.show()
 
 
