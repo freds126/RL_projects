@@ -859,8 +859,8 @@ if __name__ == "__main__":
     #Q[env.map['Eaten'], :] = -100
     #Q = np.load("pretrained_Q.npy")
 
-    #Q, policy, rewards, V_starts = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma)
-    Q, policy, rewards, V_starts = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma, debug=False)
+    Q, policy, rewards, V_starts = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma)
+    #Q, policy, rewards, V_starts = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma, debug=False)
     #np.save("pretrained_Q", Q)
 
     #np.save("latest_policy", policy)
