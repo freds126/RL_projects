@@ -37,7 +37,7 @@ class Maze:
         MOVE_UP: "move up",
         MOVE_DOWN: "move down"
     }
-    sparse_rewards = True
+    sparse_rewards = False
     # Reward values 
     if sparse_rewards:
         STEP_REWARD = 0
@@ -537,13 +537,13 @@ def value_iteration(env, gamma, epsilon):
     return V, policy, V_starts
 
 
-def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
+def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, alpha_decay, debug=False):
     print("Q-Learning....")
     # initialize Q(S,A)
     T = 50
     S = env.n_states
     A = env.n_actions
-    Q = np.ones((S, A))
+    #Q = np.ones((S, A))
 
     visited_counts = np.zeros((S, A))
     total_reward_list = []
@@ -582,7 +582,7 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             n = visited_counts[s, action]
             
             #step = min(0.5, 10.0 / (10.0 + n))
-            step = 1/(n)**(2/3)
+            step = 1/(n)**(alpha_decay)
 
             # if episode is over, next_V should be zero
             if is_finishedQ(next_s):
@@ -599,7 +599,7 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
             t += 1
 
         # epsilon decay
-        epsilon = max(0.01, epsilon * 0.99995) 
+        #epsilon = max(0.01, epsilon * 0.99995) 
 
         # saves average rewards 
         if (k + 1) % 1000 == 0:
@@ -616,7 +616,7 @@ def Q_learning(env, Q, nr_of_episodes, start_pos, epsilon, gamma, debug=False):
         
     return Q, policy, avg_reward_list, V_start_list
 
-def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, step_decay=0.5, eps_decay=0.9, debug=False):
+def SARSA(env, Q, nr_of_episodes, start_pos, epsilon, gamma, step_decay=2/3, eps_decay=0.9, debug=False):
     print("SARSA.........")
     
     T = 50
@@ -812,7 +812,7 @@ if __name__ == "__main__":
 
     horizon =  50    # Finite horizon
     gamma = 1 - 1/horizon
-    epsilon = 0.1
+    epsilon = 0.01
     nr_of_episodes = 50000
 
     print("Computing optimal policy...")
@@ -854,21 +854,45 @@ if __name__ == "__main__":
     method = 'ValIter'
     #method = 'DynProg'
 
-    Q = np.ones((S, A))
+    
     #Q[env.map['Win'], :] = 100
     #Q[env.map['Eaten'], :] = -100
     #Q = np.load("pretrained_Q.npy")
+    V_starts = {}
+    epsilons = [0.01, 0.5]
+    #alpha_decays = [0.6, 0.9]
+    alpha_decay = 2/3
 
-    Q, policy, rewards, V_starts = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma)
+    for epsilon in epsilons:
+        Q = np.ones((S, A))
+        Q, policy, rewards, V_start = Q_learning(env, Q, nr_of_episodes, start, epsilon, gamma, alpha_decay)
+    #Q, policy, rewards, V_start = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma, debug=False)
+        V_starts[epsilon] = np.array(V_start) / 100
     #Q, policy, rewards, V_starts = SARSA(env, Q, nr_of_episodes, start, epsilon, gamma, debug=False)
     #np.save("pretrained_Q", Q)
 
     #np.save("latest_policy", policy)
     #policy = np.load("latest_policy.npy")
 
+    plot_eps = True
+    if plot_eps:
+        print(len(V_starts))
+        plt.figure()
+        plt.plot(V_starts[0.01], linewidth=2, label=r"$\varepsilon$ = 0.01")
+        plt.plot(V_starts[0.5],  linewidth=2, label=r"$\varepsilon$ = 0.5")
+        plt.xlabel("Iterations $i$", size = 22)
+        plt.ylabel("Value function $V(s_0)$", size = 22)
+        plt.ylim(0, 1.05)
+        plt.grid(True, alpha=0.3)
+        plt.title(r"$V(s_0)$ of different $\varepsilon$ in SARSA", size = 22)
+        plt.legend()
+        plt.tight_layout()
+        
+        plt.savefig("V-Q-eps-0.01-0.5.png") 
+        plt.show()
     print("Simulating...")
     
-    NUM_SIMULATIONS = 10
+    NUM_SIMULATIONS = 10000
     NUM_WINS = 0
     final_states = []
     
@@ -877,7 +901,7 @@ if __name__ == "__main__":
         NUM_WINS += ('Win' in path)
         #animate_solution(maze, path, save_figs=False)
     
-    plot_reward = True
+    plot_reward = False
     if plot_reward:
         print(len(V_starts))
         plt.figure()

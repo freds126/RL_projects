@@ -194,7 +194,7 @@ def evaluate():
     else:
         print('Your policy did not pass the test! The average reward of your policy needs to be greater than {} with 95% confidence'.format(CONFIDENCE_PASS))
 
-    return avg_reward
+    return avg_reward, confidence
 
 """
 
@@ -271,7 +271,7 @@ total_episode_reward_avg = 0
 
 reward_alphas = []
 
-exploration_strategy = 'softmax'
+exploration_strategy = 'epsilon_greedy'
   
 if exploration_strategy == 'softmax':
     strategy_params = {
@@ -296,12 +296,18 @@ lambda_values = [0.1, 0.3, 0.5, 0.7, 0.9]
 
 
 
-#alpha_start = 0.01
+alpha_start = 0.01
 #lambda_ = 0.8
-
+confidence_list = []
+reward_alphas = []
 #for alpha_start in alpha_values:
-#for lambda_ in lambda_values:
-for i in range(1,2):
+for lambda_ in lambda_values:
+#for i in range(1,2):
+    
+    W = np.ones((k, N)) 
+
+    phi = np.ones((N,))
+
     alpha = np.ones((N,)) * alpha_start
 
     L2_norm = np.linalg.norm(eta, axis=1)
@@ -322,6 +328,8 @@ for i in range(1,2):
             action = np.random.randint(0, k)    # initialize action
             phi_s = np.cos(np.pi * np.dot(eta, state))   # compute phi(s)# initialize phi
             Q_s = np.dot(W[action], phi_s) # initialize Q
+            print(Q_s)
+
             while not (done or truncated):
                 # Take a random action
                 # env.action_space.n tells you the number of actions
@@ -406,32 +414,48 @@ for i in range(1,2):
     with open("weights.pkl", "wb") as f:
         if save:
             pickle.dump(data, f)
-    reward_alphas.append(evaluate())
+    reward_eval, confidence = evaluate()
+    reward_alphas.append(reward_eval)
+    confidence_list.append(confidence)
 
 #evaluate()
-plot_lambda_alpha = False
+plot_lambda_alpha = True
 if plot_lambda_alpha:
     import numpy as np
     import matplotlib.pyplot as plt
 
-    alpha_values = [0.001, 0.01, 0.05, 0.1, 0.3]   # example
-    xs = np.arange(len(alpha_values))
+    #alpha_values = [0.001, 0.01, 0.05, 0.1, 0.3]   # example
+    xs = np.arange(len(lambda_values))
 
     plt.figure(figsize=(6,4))
-    plt.plot(xs, reward_alphas, marker='o', linewidth=2)
 
-    plt.xticks(xs, lambda_values)  # show the alphas as labels
+    # error bars:
+    # reward_alphas = means
+    # confidence_list = CI half-widths, or std devs, etc.
+    plt.errorbar(
+        xs,
+        reward_alphas,
+        yerr=confidence_list,
+        marker='o',
+        linewidth=2,
+        capsize=5
+    )
+
+    plt.xticks(xs, lambda_values)
     plt.xlabel(r"Eligibility trace  $\lambda$", fontsize=12)
+    #plt.xlabel(r"Initial step size  $\alpha$", fontsize=12)
     plt.ylabel("Average total reward", fontsize=12)
     plt.title("Effect of Eligibility trace on Average Return", fontsize=14)
+    #plt.title("Effect of step size on Average Return", fontsize=14)
 
     CONFIDENCE_PASS = -135
     plt.axhline(CONFIDENCE_PASS, linestyle='--', color='red')
 
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig("rewards-lambdas.png")
+    plt.savefig("rewards-lambdas-conf.png")
     plt.show()
+
 
 
 # Plot Rewards
