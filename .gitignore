@@ -1,5 +1,12 @@
 __pycache__/
 *.png
 policy_frames/
-*.ipynb_checkpoints
+.ipynb_checkpoints/
 *venv/
+*.npy
+FREDRICK-CARLSÅKER*
+*.zip
+dont-delete/
+*.pdf
+*.pkl
+
