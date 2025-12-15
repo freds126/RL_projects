@@ -6,11 +6,49 @@
 import numpy as np
 import gymnasium as gym
 import torch
+import torch.nn as nn
+import torch.optim as optim
 import matplotlib.pyplot as plt
 from tqdm import trange
 from DQN_agent import RandomAgent
 import warnings
+from collections import deque
 warnings.simplefilter(action='ignore', category=FutureWarning)
+
+
+class ExperienceReplayBuffer:
+    
+    def __init__(self, buffer_size: int):
+        self.buffer = deque(maxlen=buffer_size)
+
+    def append(self, experience):
+        self.buffer.append(experience)
+
+    def __len__(self):
+        return len(self.buffer)
+
+    def sample_batch(self, n: int):
+        if n > len(self.buffer):
+            raise IndexError("Sample size exceeds buffer size")
+        indices = np.random.choice(len(self.buffer), size=n)
+        batch = [self.buffer[i] for i in indices]
+        return zip(*batch)
+    
+
+class QNetwork(nn.Module):
+    
+    def __init__(self, input_dim, output_dim, latent_dim=64):
+        super().__init__()
+        self.input_layer = nn.Linear(input_dim, latent_dim)
+        self.hidden_layer = nn.Linear(latent_dim, latent_dim)
+        self.output_layer = nn.Linear(latent_dim, output_dim)
+        self.activation = nn.LeakyReLU()
+
+    def forward(self, x):
+        x = self.activation(self.input_layer(x)) 
+        x = self.activation(self.hidden_layer(x))
+        return self.output_layer(x)
+
 
 def running_average(x, N):
     ''' Function used to compute the running average
@@ -23,11 +61,20 @@ def running_average(x, N):
         y = np.zeros_like(x)
     return y
 
+
+if torch.cuda.is_available():
+    device = torch.device("cuda:0")
+elif torch.backends.mps.is_available():
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+print(f"Using device: {device}")
+
+
 # Import and initialize the discrete Lunar Lander Environment
 env = gym.make('LunarLander-v3')
 # If you want to render the environment while training run instead:
 # env = gym.make('LunarLander-v3', render_mode = "human")
-
 
 env.reset()
 
@@ -37,6 +84,14 @@ discount_factor = 0.95                       # Value of the discount factor
 n_ep_running_average = 50                    # Running average of 50 episodes
 n_actions = env.action_space.n               # Number of available actions
 dim_state = len(env.observation_space.high)  # State dimensionality
+BUFFER_SIZE = 1000                           # size of replay buffer
+
+
+lr = 1e-3
+
+
+
+
 
 # We will use these variables to compute the average episodic reward and
 # the average number of steps per episode
@@ -45,6 +100,16 @@ episode_number_of_steps = []   # this list contains the number of steps per epis
 
 # Random agent initialization
 agent = RandomAgent(n_actions)
+
+# intialize buffer
+buffer = ExperienceReplayBuffer(BUFFER_SIZE)
+
+# initialize Q-networks
+q_network = QNetwork(dim_state, n_actions)
+target_network = QNetwork(dim_state, n_actions)
+
+# initalize optimizer
+optimizer = optim.Adam(q_network.parameters(), lr=lr)
 
 ### Training process
 
@@ -64,6 +129,8 @@ for i in EPISODES:
 
         # Get next state and reward
         next_state, reward, done, truncated, _ = env.step(action)
+
+        # 
 
         # Update episode reward
         total_episode_reward += reward
