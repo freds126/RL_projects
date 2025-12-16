@@ -9,4 +9,6 @@ FREDRICK-CARLSÅKER*
 dont-delete/
 *.pdf
 *.pkl
-
+figurer/
+problem2/
+*.pth
