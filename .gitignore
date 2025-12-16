@@ -12,3 +12,4 @@ dont-delete/
 figurer/
 problem2/
 *.pth
+/lab2/problem1/runs/*
