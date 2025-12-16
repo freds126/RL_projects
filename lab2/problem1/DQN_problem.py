@@ -386,6 +386,63 @@ def run_buffersize_comparison(params, buffer_counts, size=20, save=False):
         save
     )
 
+def plot3d_grid(model, size=20, save=False):
+    from mpl_toolkits.mplot3d import Axes3D
+
+    Ny, Nw = 100, 150
+
+    y_vals = np.linspace(0.0, 1.5, Ny)
+    w_vals = np.linspace(-np.pi, np.pi, Nw)
+
+    Y, W = np.meshgrid(y_vals, w_vals, indexing = "ij")
+
+    states = np.zeros((Ny*Nw, 8), dtype=np.float32)
+    states[:, 1] = Y.reshape(-1)
+    states[:, 4] = W.reshape(-1)
+
+    states_t = torch.from_numpy(states)
+
+    with torch.no_grad():
+        Q = model(states_t)
+        V = Q.max(dim=1).values.numpy()
+        A = Q.argmax(dim=1).numpy()
+
+    V_grid = V.reshape(Ny, Nw)
+    A_grid = A.reshape(Ny, Nw)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection="3d")
+
+    ax.plot_surface(Y, W, V_grid, linewidth=0, antialiased=True)
+
+    ax.set_xlabel("y (height)", fontsize=size)
+    ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
+    ax.set_zlabel(r"$\max_a$ Q(s,a)", fontsize=size)
+    ax.set_title(r"Value surface: $\max_a$ $Q_{\theta}(s(y,\theta), a)$", fontsize=size)
+
+    
+    if save:
+        plt.savefig("V_3d_plot.png")
+
+    plt.show()
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection="3d")
+
+    ax.plot_surface(Y, W, A_grid.astype(float), linewidth=0, antialiased=False)
+
+    ax.set_xlabel("y (height)", fontsize=size)
+    ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
+    ax.set_zlabel(r"arg$\max_a Q(s,a)$", fontsize=size)
+    ax.set_title(r"Greedy action: arg$\max_a$ $Q_{\theta} (s(y,\theta), a)$", fontsize=size)
+
+    if save:
+        plt.savefig("Q_3d_plot.png")
+
+    plt.show()
+
+
+
 if __name__ == '__main__':
 
     params = {
@@ -414,7 +471,7 @@ if __name__ == '__main__':
         "stop_avg_reward": 300      # early stop threshold
     }
 
-    savePath = "neural-network-1.pth"
+    #savePath = "neural-network-1.pth"
     
     #discount_factors = [0.99, 1, 0.5]
     #run_discount_factor_comparison(params, discount_factors, save=False)
@@ -423,9 +480,12 @@ if __name__ == '__main__':
     #run_N_episodes_comparison(params, episode_counts, save=True)
     #runs = torch.load("N_ep_runs.pth", weights_only=False)
 
-    buffer_counts = [2000, 15000, 30000]
-    run_buffersize_comparison(params, buffer_counts, size=20, save=True)
+    #buffer_counts = [2000, 15000, 30000]
+    #run_buffersize_comparison(params, buffer_counts, size=20, save=False)
 
+    #model = torch.load("neural-network-1.pth", weights_only=False)
+    #model.eval()
+    #plot3d_grid(model, size=20, save=False)
     
     #plot_reward_sweep(runs, 50, "Effect of number of training episodes", size=20, save=False)
     #save_params(params)
