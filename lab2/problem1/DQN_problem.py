@@ -455,7 +455,9 @@ def train_dqn(params):
     return q_network, episode_reward_list, episode_number_of_steps
 
 if __name__ == '__main__':
-
+    """
+    You have to use torch.load('neural-network-1.pth', weights_only=False) to make the check solution script work!!!
+    """
     params = {
     
         "N_episodes": 500,          # Nr of epsiodes to train for
@@ -507,6 +509,9 @@ if __name__ == '__main__':
         model.eval()
         plot3d_grid(model, size=20, save=False)
     
-    
+    normal_run = True
+    if normal_run:
+        train_dqn(params)
+
     #save_params(params)
-    #save_model(q_network)
+    #save_model(q_network, savePath)
