@@ -46,6 +46,9 @@ class ExperienceReplayBuffer:
         )
     
 
+### HELPERS ###
+
+
 def running_average(x, N):
     ''' Function used to compute the running average
         of the last N elements of a vector x
@@ -103,6 +106,28 @@ def get_device():
         return torch.device("mps")
     return torch.device("cpu")
 
+def save_model(q_network, filename="neural-network-1.pth"):
+    q_network.eval() 
+    # Move to CPU
+    q_network_cpu = q_network.to("cpu")
+    torch.save(q_network_cpu, filename)#, _use_new_zipfile_serialization=False)  
+    print("Model saved successfully!")
+
+def load_model(path="neural-network-1.pth"):
+    """
+    Loads a trained QNetwork
+    """
+    model = torch.load(path, weights_only=False)
+    model.eval()
+    return model
+
+def save_params(params):
+    torch.save(params, "training_params.pth")
+    print("Saved training_params.pth")
+
+
+### Plots and such ###
+
 
 def plot_avg_rewards_n_steps(episode_reward_list, episode_number_of_steps, n, filename, save = False):
 
@@ -151,24 +176,63 @@ def plot_reward_sweep(runs, n_running_avg=50, title="", size=20, save=False):
         plt.savefig(f"{title}.png")
     plt.show()
 
-def save_model(q_network, filename="neural-network-1.pth"):
-    q_network.eval() 
-    # Move to CPU
-    q_network_cpu = q_network.to("cpu")
-    torch.save(q_network_cpu, filename)#, _use_new_zipfile_serialization=False)  
-    print("Model saved successfully!")
+def plot3d_grid(model, size=20, save=False):
+    from mpl_toolkits.mplot3d import Axes3D
 
-def load_model(path="neural-network-1.pth"):
-    """
-    Loads a trained QNetwork
-    """
-    model = torch.load(path, weights_only=False)
-    model.eval()
-    return model
+    Ny, Nw = 100, 150
 
-def save_params(params):
-    torch.save(params, "training_params.pth")
-    print("Saved training_params.pth")
+    y_vals = np.linspace(0.0, 1.5, Ny)
+    w_vals = np.linspace(-np.pi, np.pi, Nw)
+
+    Y, W = np.meshgrid(y_vals, w_vals, indexing = "ij")
+
+    states = np.zeros((Ny*Nw, 8), dtype=np.float32)
+    states[:, 1] = Y.reshape(-1)
+    states[:, 4] = W.reshape(-1)
+
+    states_t = torch.from_numpy(states)
+
+    with torch.no_grad():
+        Q = model(states_t)
+        V = Q.max(dim=1).values.numpy()
+        A = Q.argmax(dim=1).numpy()
+
+    V_grid = V.reshape(Ny, Nw)
+    A_grid = A.reshape(Ny, Nw)
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection="3d")
+
+    ax.plot_surface(Y, W, V_grid, linewidth=0, antialiased=True)
+
+    ax.set_xlabel("y (height)", fontsize=size)
+    ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
+    ax.set_zlabel(r"$\max_a$ Q(s,a)", fontsize=size)
+    ax.set_title(r"Value surface: $\max_a$ $Q_{\theta}(s(y,\theta), a)$", fontsize=size)
+    
+    if save:
+        plt.savefig("V_3d_plot.png")
+
+    plt.show()
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection="3d")
+
+    ax.plot_surface(Y, W, A_grid.astype(float), linewidth=0, antialiased=False)
+
+    ax.set_xlabel("y (height)", fontsize=size)
+    ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
+    ax.set_zlabel(r"arg$\max_a Q(s,a)$", fontsize=size)
+    ax.set_title(r"Greedy action: arg$\max_a$ $Q_{\theta} (s(y,\theta), a)$", fontsize=size)
+
+    if save:
+        plt.savefig("Q_3d_plot.png")
+
+    plt.show()
+
+
+### run different tests ###
+
 
 def run_discount_factor_comparison(params, discount_factors, save):
 
@@ -178,6 +242,64 @@ def run_discount_factor_comparison(params, discount_factors, save):
 
         q_network, epsiode_reward_list, epsiode_step_list = train_dqn(params)
         plot_avg_rewards_n_steps(epsiode_reward_list, epsiode_step_list, params["n_ep_running_average"], filename, save)
+
+def run_N_episodes_comparison(params, episode_counts, size=20, save=False):
+
+    base_params = params.copy()
+
+    runs = []
+    for N in episode_counts:
+        run_params = base_params.copy()
+        run_params["N_episodes"] = N
+
+        qnet, rewards, steps = train_dqn(run_params)
+
+        runs.append({
+            "label": f"N={N}",
+            "rewards": rewards
+        })
+
+    if save:
+        torch.save(runs, "N_ep_runs.pth")
+
+    plot_reward_sweep(
+        runs,
+        base_params["n_ep_running_average"],
+        f"Effect of number of training episodes)", 
+        size,
+        save
+    )
+
+def run_buffersize_comparison(params, buffer_counts, size=20, save=False):
+
+    base_params = params.copy()
+
+    runs = []
+    for buff in buffer_counts:
+        run_params = base_params.copy()
+        run_params["BUFFER_SIZE"] = buff
+
+        qnet, rewards, steps = train_dqn(run_params)
+
+        runs.append({
+            "label": f"BUFFER_SIZE={buff}",
+            "rewards": rewards
+        })
+
+    if save:
+        torch.save(runs, "buffersize_runs.pth")
+
+    plot_reward_sweep(
+        runs,
+        base_params["n_ep_running_average"],
+        f"Effect of buffer size", 
+        size, 
+        save
+    )
+
+
+### main DQN training loop ###
+
 
 def train_dqn(params):
     device = get_device()
@@ -332,117 +454,6 @@ def train_dqn(params):
 
     return q_network, episode_reward_list, episode_number_of_steps
 
-def run_N_episodes_comparison(params, episode_counts, size=20, save=False):
-
-    base_params = params.copy()
-
-    runs = []
-    for N in episode_counts:
-        run_params = base_params.copy()
-        run_params["N_episodes"] = N
-
-        qnet, rewards, steps = train_dqn(run_params)
-
-        runs.append({
-            "label": f"N={N}",
-            "rewards": rewards
-        })
-
-    if save:
-        torch.save(runs, "N_ep_runs.pth")
-
-    plot_reward_sweep(
-        runs,
-        base_params["n_ep_running_average"],
-        f"Effect of number of training episodes)", 
-        size,
-        save
-    )
-
-def run_buffersize_comparison(params, buffer_counts, size=20, save=False):
-
-    base_params = params.copy()
-
-    runs = []
-    for buff in buffer_counts:
-        run_params = base_params.copy()
-        run_params["BUFFER_SIZE"] = buff
-
-        qnet, rewards, steps = train_dqn(run_params)
-
-        runs.append({
-            "label": f"BUFFER_SIZE={buff}",
-            "rewards": rewards
-        })
-
-    if save:
-        torch.save(runs, "buffersize_runs.pth")
-
-    plot_reward_sweep(
-        runs,
-        base_params["n_ep_running_average"],
-        f"Effect of buffer size", 
-        size, 
-        save
-    )
-
-def plot3d_grid(model, size=20, save=False):
-    from mpl_toolkits.mplot3d import Axes3D
-
-    Ny, Nw = 100, 150
-
-    y_vals = np.linspace(0.0, 1.5, Ny)
-    w_vals = np.linspace(-np.pi, np.pi, Nw)
-
-    Y, W = np.meshgrid(y_vals, w_vals, indexing = "ij")
-
-    states = np.zeros((Ny*Nw, 8), dtype=np.float32)
-    states[:, 1] = Y.reshape(-1)
-    states[:, 4] = W.reshape(-1)
-
-    states_t = torch.from_numpy(states)
-
-    with torch.no_grad():
-        Q = model(states_t)
-        V = Q.max(dim=1).values.numpy()
-        A = Q.argmax(dim=1).numpy()
-
-    V_grid = V.reshape(Ny, Nw)
-    A_grid = A.reshape(Ny, Nw)
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection="3d")
-
-    ax.plot_surface(Y, W, V_grid, linewidth=0, antialiased=True)
-
-    ax.set_xlabel("y (height)", fontsize=size)
-    ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
-    ax.set_zlabel(r"$\max_a$ Q(s,a)", fontsize=size)
-    ax.set_title(r"Value surface: $\max_a$ $Q_{\theta}(s(y,\theta), a)$", fontsize=size)
-
-    
-    if save:
-        plt.savefig("V_3d_plot.png")
-
-    plt.show()
-
-    fig = plt.figure(figsize=(10, 7))
-    ax = fig.add_subplot(111, projection="3d")
-
-    ax.plot_surface(Y, W, A_grid.astype(float), linewidth=0, antialiased=False)
-
-    ax.set_xlabel("y (height)", fontsize=size)
-    ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
-    ax.set_zlabel(r"arg$\max_a Q(s,a)$", fontsize=size)
-    ax.set_title(r"Greedy action: arg$\max_a$ $Q_{\theta} (s(y,\theta), a)$", fontsize=size)
-
-    if save:
-        plt.savefig("Q_3d_plot.png")
-
-    plt.show()
-
-
-
 if __name__ == '__main__':
 
     params = {
@@ -471,22 +482,31 @@ if __name__ == '__main__':
         "stop_avg_reward": 300      # early stop threshold
     }
 
-    #savePath = "neural-network-1.pth"
+    savePath = "neural-network-1.pth"
     
-    #discount_factors = [0.99, 1, 0.5]
-    #run_discount_factor_comparison(params, discount_factors, save=False)
+    run_discount_comp = False
+    if run_discount_comp:
+        discount_factors = [0.99, 1, 0.5]
+        run_discount_factor_comparison(params, discount_factors, save=False)
     
-    #episode_counts = [200, 500, 800]  
-    #run_N_episodes_comparison(params, episode_counts, save=True)
-    #runs = torch.load("N_ep_runs.pth", weights_only=False)
+    run_episode_comp = False
+    if run_episode_comp:
+        episode_counts = [200, 500, 800]  
+        run_N_episodes_comparison(params, episode_counts, save=False)
+        #runs = torch.load("N_ep_runs.pth", weights_only=False)
+        #plot_reward_sweep(runs, 50, "Effect of number of training episodes", size=20, save=False)
 
-    #buffer_counts = [2000, 15000, 30000]
-    #run_buffersize_comparison(params, buffer_counts, size=20, save=False)
+    run_buffer_comp = False
+    if run_buffer_comp:        
+        buffer_counts = [2000, 15000, 30000]
+        run_buffersize_comparison(params, buffer_counts, size=20, save=False)
 
-    #model = torch.load("neural-network-1.pth", weights_only=False)
-    #model.eval()
-    #plot3d_grid(model, size=20, save=False)
+    plot3d = False
+    if plot3d:
+        model = torch.load("neural-network-1.pth", weights_only=False)
+        model.eval()
+        plot3d_grid(model, size=20, save=False)
     
-    #plot_reward_sweep(runs, 50, "Effect of number of training episodes", size=20, save=False)
+    
     #save_params(params)
     #save_model(q_network)
