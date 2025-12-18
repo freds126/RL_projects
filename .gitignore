@@ -10,6 +10,5 @@ dont-delete/
 *.pdf
 *.pkl
 figurer/
-problem2/
 *.pth
-/lab2/problem1/runs/*
+/lab2/problem1/runs/
