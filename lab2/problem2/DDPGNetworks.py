@@ -16,9 +16,9 @@ class Actor(nn.Module):
         return self.tanh(self.fc3(x))
     
 class Critic(nn.Module):
-    def __init__(self, input_dim, output_dim, action_dim, latent_dim1=400, latent_dim2 = 200):
+    def __init__(self, state_dim, action_dim, output_dim=1, latent_dim1=400, latent_dim2 = 200):
         super().__init__()
-        self.fc1 = nn.Linear(input_dim, latent_dim1)
+        self.fc1 = nn.Linear(state_dim, latent_dim1)
         self.fc2 = nn.Linear(latent_dim1 + action_dim, latent_dim2)
         self.fc3 = nn.Linear(latent_dim2, output_dim)
         self.relu = nn.ReLU()
