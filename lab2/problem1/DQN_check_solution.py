@@ -26,7 +26,7 @@ def running_average(x, N):
 
 # Load model
 try:
-    model = torch.load('neural-network-1.pth',weights_only=False)
+    model = torch.load('neural-network-1.pth', weights_only=False)
     print('Network model: {}'.format(model))
 except:
     print('File neural-network-1.pth not found!')

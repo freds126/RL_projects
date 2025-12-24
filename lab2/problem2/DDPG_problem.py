@@ -16,6 +16,7 @@ from tqdm import trange
 from DDPG_agent import RandomAgent, DDPGAgent, LowPassNoise, UncorrNormalNoise
 from DDPGNetworks import Actor, Critic
 from DDPG_soft_updates import soft_updates
+from mpl_toolkits.mplot3d import Axes3D
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
@@ -113,7 +114,8 @@ def plot_rewards_steps(episode_reward_list, episode_number_of_steps, filename="r
 
     if save:
         plt.savefig(filename)
-    plt.show()
+    plt.close(fig)
+    #plt.show()
 
 def plot_reward_sweep(runs, n_running_avg=50, title="", size=20, save=False):
     """
@@ -132,61 +134,123 @@ def plot_reward_sweep(runs, n_running_avg=50, title="", size=20, save=False):
     plt.tight_layout(pad=2)
     if save:
         plt.savefig(f"{title}.png")
-    plt.show()
+    plt.close()
 
-def plot3d_grid(model, size=20, save=False):
-    from mpl_toolkits.mplot3d import Axes3D
+    #plt.show()
 
+def plot3d_grid(actor, critic, size=20, save=False):
+    
     Ny, Nw = 100, 150
-
     y_vals = np.linspace(0.0, 1.5, Ny)
     w_vals = np.linspace(-np.pi, np.pi, Nw)
 
-    Y, W = np.meshgrid(y_vals, w_vals, indexing = "ij")
+    Y, W = np.meshgrid(y_vals, w_vals, indexing="ij")
 
-    states = np.zeros((Ny*Nw, 8), dtype=np.float32)
+    states = np.zeros((Ny * Nw, 8), dtype=np.float32)
     states[:, 1] = Y.reshape(-1)
     states[:, 4] = W.reshape(-1)
 
     states_t = torch.from_numpy(states)
 
     with torch.no_grad():
-        Q = model(states_t)
-        V = Q.max(dim=1).values.numpy()
-        A = Q.argmax(dim=1).numpy()
+        A = actor(states_t)                  # (N, act_dim)
+        V = critic(states_t, A)              # (N, 1) or (N,)
 
-    V_grid = V.reshape(Ny, Nw)
-    A_grid = A.reshape(Ny, Nw)
+    V_grid = V.squeeze(-1).reshape(Ny, Nw)
+    A_grid = A[:, 0].reshape(Ny, Nw)          # choose action dim
 
+    # ---- VALUE PLOT ----
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection="3d")
-
     ax.plot_surface(Y, W, V_grid, linewidth=0, antialiased=True)
 
     ax.set_xlabel("y (height)", fontsize=size)
     ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
-    ax.set_zlabel(r"$\max_a$ Q(s,a)", fontsize=size)
-    ax.set_title(r"Value surface: $\max_a$ $Q_{\theta}(s(y,\theta), a)$", fontsize=size)
-    
-    if save:
-        plt.savefig("V_3d_plot.png")
+    ax.set_zlabel(r"$Q(s,\pi(s))$", fontsize=size)
+    ax.set_title(r"Value surface: $Q(s(y,\theta), \pi(s))$", fontsize=size)
 
+    if save:
+        plt.savefig("V_3d_plot-2.png")
     plt.show()
 
+    # ---- ACTION PLOT ----
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection="3d")
-
-    ax.plot_surface(Y, W, A_grid.astype(float), linewidth=0, antialiased=False)
+    ax.plot_surface(Y, W, A_grid, linewidth=0, antialiased=True)
 
     ax.set_xlabel("y (height)", fontsize=size)
     ax.set_ylabel(r"$\theta$ (angle)  [rad]", fontsize=size)
-    ax.set_zlabel(r"arg$\max_a Q(s,a)$", fontsize=size)
-    ax.set_title(r"Greedy action: arg$\max_a$ $Q_{\theta} (s(y,\theta), a)$", fontsize=size)
+    ax.set_zlabel(r"$\pi_0(s)$", fontsize=size)
+    ax.set_title(r"Actor action surface: $\pi_0(s(y,\theta))$", fontsize=size)
 
     if save:
-        plt.savefig("Q_3d_plot.png")
-
+        plt.savefig("action_3d_plot-2.png")
     plt.show()
+
+def check_solution(env, agent, N_EPISODES = 50):
+    # Import and initialize Mountain Car Environment
+    # If you want to render the environment while training run instead:
+    #env = gym.make('LunarLander-v3', render_mode = "human")
+
+    env.reset()
+
+    # Parameters
+ 
+    CONFIDENCE_PASS = 50
+
+    # Reward
+    episode_reward_list = []  # Used to store episodes reward
+
+    # Simulate episodes
+    print('Checking solution...')
+    EPISODES = trange(N_EPISODES, desc='Episode: ', leave=True)
+    for i in EPISODES:
+        EPISODES.set_description("Episode {}".format(i))
+        # Reset enviroment data
+        done, truncated = False, False
+        state = env.reset()[0]
+        total_episode_reward = 0.
+        while not (done or truncated):
+            # Get next state and reward.  The done variable
+            # will be True if you reached the goal position,
+            # False otherwise
+            
+            # Choose action via the agent interface
+            if isinstance(agent, DDPGAgent):
+                action = agent.forward(state, explore=False)
+            else:
+                action = agent.forward(state)
+            
+            next_state, reward, done, truncated, _ = env.step(action)
+
+            # Update episode reward
+            total_episode_reward += reward
+
+            # Update state for next iteration
+            state = next_state
+
+        # Append episode reward
+        episode_reward_list.append(total_episode_reward)
+
+
+    # Close environment 
+    env.close()
+
+
+    avg_reward = np.mean(episode_reward_list)
+    confidence = np.std(episode_reward_list) * 1.96 / np.sqrt(N_EPISODES)
+
+
+    print('Policy achieves an average total reward of {:.1f} +/- {:.1f} with confidence 95%.'.format(
+                    avg_reward,
+                    confidence))
+
+    if avg_reward - confidence >= CONFIDENCE_PASS:
+        print('Your policy passed the test!')
+    else:
+        print("Your policy did not pass the test! The average reward of your policy needs to be greater than {} with 95% confidence".format(CONFIDENCE_PASS))
+    return avg_reward, confidence
+
 
 def fill_buffer(env, buffer, N):
     t = 0
@@ -292,7 +356,7 @@ def train_ddpg(params):
             # append to buffer
             buffer.append(Experience(state, action, reward, next_state, done))
             
-            if global_t > start_update:
+            if (global_t > start_update and len(buffer) >= batch_size):
                 states, actions, rewards, next_states, dones = buffer.sample_batch(batch_size)
                 
                 # make tensors, and unsqueeze
@@ -361,7 +425,7 @@ def train_ddpg(params):
             i, total_episode_reward, t,
             avg_reward,
             avg_steps, update_count))
-        if avg_reward > 200:
+        if avg_reward > 240:
             print(f"Successfully trained agent to avg reward of {avg_reward} after {global_t} iterations")
             break
 
@@ -534,7 +598,7 @@ def train_ddpg_chunking(params):
             i, total_episode_reward, t,
             avg_reward,
             avg_steps, update_count))
-        if avg_reward > 200:
+        if avg_reward > 240:
             print(f"Successfully trained agent to avg reward of {avg_reward} after {global_t} iterations")
             break
 
@@ -543,9 +607,9 @@ def train_ddpg_chunking(params):
     return actor_net, critic_net, episode_reward_list, episode_number_of_steps
 
 def run_discount_factor_comparison(params, discount_factors, save):
-    torch.manual_seed(0)
-    np.random.seed(0)
-    random.seed(0)
+    torch.manual_seed(100)
+    np.random.seed(100)
+    random.seed(100)
     base_params = params.copy()
     runs = []
     for discount_factor in discount_factors:
@@ -559,7 +623,7 @@ def run_discount_factor_comparison(params, discount_factors, save):
 
         runs.append({
             "label": f"gamma={discount_factor}",
-            "rewards": rewards
+            "rewards": epsiode_reward_list
         })
 
         del actor, critic
@@ -568,9 +632,9 @@ def run_discount_factor_comparison(params, discount_factors, save):
         torch.save(runs, "discount_factors_runs.pth")
 
 def run_N_episodes_comparison(params, episode_counts, size=20, save=False):
-    torch.manual_seed(0)
-    np.random.seed(0)
-    random.seed(0)
+    torch.manual_seed(100)
+    np.random.seed(100)
+    random.seed(100)
     base_params = params.copy()
 
     runs = []
@@ -599,9 +663,9 @@ def run_N_episodes_comparison(params, episode_counts, size=20, save=False):
     )
 
 def run_buffersize_comparison(params, buffer_counts, size=20, save=False):
-    torch.manual_seed(0)
-    np.random.seed(0)
-    random.seed(0)
+    torch.manual_seed(100)
+    np.random.seed(100)
+    random.seed(100)
     base_params = params.copy()
 
     runs = []
@@ -638,7 +702,7 @@ if __name__ == "__main__":
         "update_actor_every": 2,
         "tau":1e-3,
         "batch_size": 64,
-        "buffer_size": 100000,
+        "buffer_size": 30000,
         "discount_factor": 0.99,
         "n_ep_running_average": 50,
         "N_episodes": 400,
@@ -695,15 +759,43 @@ if __name__ == "__main__":
 
         plot_rewards_steps(rewards, steps, save=True)
 
+    run_comparison = False
+    if run_comparison:
+        torch.manual_seed(100)
+        np.random.seed(100)
+        random.seed(100)
 
-    discount_factors = [0.99, 0.5, 1]
-    run_discount_factor_comparison(params, discount_factors, save=True)
+        discount_factors = [0.99, 0.5, 1]
+        run_discount_factor_comparison(params, discount_factors, save=True)
 
-    buffer_counts = [30000, 100000, 1000000]
-    run_buffersize_comparison(params, buffer_counts, save=True)
+        buffer_counts = [30000, 100000, 1000000]
+        run_buffersize_comparison(params, buffer_counts, save=True)
 
-    episode_counts = [200, 400, 600]
-    run_N_episodes_comparison(params, episode_counts, save=True)
+        episode_counts = [200, 400, 600]
+        run_N_episodes_comparison(params, episode_counts, save=True)
 
-    
+    plot3d = False
+    if plot3d:
+        critic = load_model("neural-network-2-critic.pth")
+        actor = load_model("neural-network-2-actor.pth")
+        plot3d_grid(actor, critic, save=True)
+
+    compare_with_random = True
+    if compare_with_random:
+        actor = load_model("neural-network-2-actor.pth")
+        actor.eval()
+
+        env = gym.make('LunarLanderContinuous-v3')
+        device = get_device()
+
+        env.reset()
+        
+        m = len(env.action_space.high)
+        random_agent = RandomAgent(m)
+
+        # noise not being used for eval
+        ddpg_agent = DDPGAgent(m, actor, device, noise = None)
+
+        check_solution(env, random_agent)
+        check_solution(env, ddpg_agent)
 

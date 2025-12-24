@@ -8,7 +8,6 @@ import gymnasium as gym
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.tensorboard import SummaryWriter
 import random
 import matplotlib.pyplot as plt
 from tqdm import trange
@@ -436,7 +435,7 @@ def train_dqn(params):
         t = 0
 
         while not (done or truncated):
-            # Take a random action
+            # Take a epsilon greedy action
             action = agent.forward(state, epsilon)
 
             # Get next state and reward

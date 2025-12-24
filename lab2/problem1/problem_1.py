@@ -1,3 +1,0 @@
-"""
-Vad behöver vi
-"""

@@ -12,3 +12,4 @@ dont-delete/
 figurer/
 *.pth
 /lab2/problem1/runs/
+*.txt

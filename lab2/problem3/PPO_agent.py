@@ -5,6 +5,9 @@
 
 # Load packages
 import numpy as np
+import torch
+from torch.distributions import Normal
+
 
 class Agent(object):
     ''' Base agent class
@@ -41,3 +44,24 @@ class RandomAgent(Agent):
                     the parent class Agent
         '''
         return np.clip(-1 + 2 * np.random.rand(self.n_actions), -1, 1)
+
+
+class PPOAgent(Agent):
+    def __init__(self, n_actions: int, actor, device):
+        super(PPOAgent, self).__init__(n_actions)
+        self.device = device
+        self.actor = actor.to(self.device)
+
+    def forward(self, state):
+        if not torch.is_tensor(state):
+            state = torch.as_tensor(state, dtype=torch.float32)
+        state = state.to(self.device)
+
+        with torch.no_grad():
+            mu, var = self.actor(state)
+
+            dist = Normal(mu, torch.sqrt(var))
+            a = dist.sample()
+            a = torch.clamp(a, -1.0, 1.0)
+        return a.cpu().numpy()
+    
