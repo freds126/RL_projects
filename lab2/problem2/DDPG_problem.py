@@ -13,7 +13,7 @@ import random
 from collections import deque, namedtuple
 import matplotlib.pyplot as plt
 from tqdm import trange
-from DDPG_agent import RandomAgent, DDPGAgent, LowPassNoise, UncorrNormalNoise
+from DDPG_agent import RandomAgent, DDPGAgent, LowPassNoise
 from DDPGNetworks import Actor, Critic
 from DDPG_soft_updates import soft_updates
 from mpl_toolkits.mplot3d import Axes3D
@@ -114,8 +114,8 @@ def plot_rewards_steps(episode_reward_list, episode_number_of_steps, filename="r
 
     if save:
         plt.savefig(filename)
-    plt.close(fig)
-    #plt.show()
+    #plt.close(fig)
+    plt.show()
 
 def plot_reward_sweep(runs, n_running_avg=50, title="", size=20, save=False):
     """
@@ -134,13 +134,13 @@ def plot_reward_sweep(runs, n_running_avg=50, title="", size=20, save=False):
     plt.tight_layout(pad=2)
     if save:
         plt.savefig(f"{title}.png")
-    plt.close()
+    #plt.close()
 
-    #plt.show()
+    plt.show()
 
 def plot3d_grid(actor, critic, size=20, save=False):
     
-    Ny, Nw = 100, 150
+    Ny, Nw = 100, 100
     y_vals = np.linspace(0.0, 1.5, Ny)
     w_vals = np.linspace(-np.pi, np.pi, Nw)
 
@@ -157,7 +157,7 @@ def plot3d_grid(actor, critic, size=20, save=False):
         V = critic(states_t, A)              # (N, 1) or (N,)
 
     V_grid = V.squeeze(-1).reshape(Ny, Nw)
-    A_grid = A[:, 0].reshape(Ny, Nw)          # choose action dim
+    A_grid = A[:, 1].reshape(Ny, Nw)          # choose action dim
 
     # ---- VALUE PLOT ----
     fig = plt.figure(figsize=(10, 7))
@@ -232,14 +232,11 @@ def check_solution(env, agent, N_EPISODES = 50):
         # Append episode reward
         episode_reward_list.append(total_episode_reward)
 
-
     # Close environment 
     env.close()
 
-
     avg_reward = np.mean(episode_reward_list)
     confidence = np.std(episode_reward_list) * 1.96 / np.sqrt(N_EPISODES)
-
 
     print('Policy achieves an average total reward of {:.1f} +/- {:.1f} with confidence 95%.'.format(
                     avg_reward,
@@ -404,7 +401,6 @@ def train_ddpg(params):
 
             # Update episode reward
             total_episode_reward += reward
-            
 
             # Update state for next iteration
             state = next_state
@@ -425,7 +421,7 @@ def train_ddpg(params):
             i, total_episode_reward, t,
             avg_reward,
             avg_steps, update_count))
-        if avg_reward > 240:
+        if avg_reward > 300:
             print(f"Successfully trained agent to avg reward of {avg_reward} after {global_t} iterations")
             break
 
@@ -454,7 +450,6 @@ def train_ddpg_chunking(params):
     grad_clip = params["grad_clip"] 
     update_actor_every = params["update_actor_every"]
     train_every = params["train_every"]
-    min_buf = params["min_buf"]
     tau = params["tau"]
 
     # parameters for noise
@@ -486,8 +481,7 @@ def train_ddpg_chunking(params):
     optimizer_actor = optim.Adam(actor_net.parameters(), lr=params["lr_actor"])
 
     # initalize noise
-    #noise = LowPassNoise(m, device, sigma, mu)
-    noise = UncorrNormalNoise(m, device, sigma)
+    noise = LowPassNoise(m, device, sigma, mu)
 
     # DDPG Agent initialization
     agent = DDPGAgent(m, actor_net, device, noise)
@@ -598,7 +592,7 @@ def train_ddpg_chunking(params):
             i, total_episode_reward, t,
             avg_reward,
             avg_steps, update_count))
-        if avg_reward > 240:
+        if avg_reward > 200:
             print(f"Successfully trained agent to avg reward of {avg_reward} after {global_t} iterations")
             break
 
@@ -698,17 +692,16 @@ if __name__ == "__main__":
     params = {
         "lr_actor": 5e-5,
         "lr_critic": 5e-4,
-        "grad_clip": 1.0,
+        "grad_clip": 0.5, # changed from 1.0
         "update_actor_every": 2,
-        "tau":1e-3,
-        "batch_size": 64,
-        "buffer_size": 30000,
+        "tau":5e-3,
+        "batch_size": 64, 
+        "buffer_size":  100000, # changed from 30 000
         "discount_factor": 0.99,
         "n_ep_running_average": 50,
         "N_episodes": 400,
         "sigma_noise": 0.2,
         "mu_noise": 0.15,
-        "sigma_decay": 0.9995,
         "start_steps": 10000,
         "start_update": 1000
     }
@@ -716,26 +709,30 @@ if __name__ == "__main__":
     params_chunking = {
         "lr_actor": 5e-5,
         "lr_critic": 5e-4,
-        "grad_clip": 1.0,
+        "grad_clip": 0.5,
         "train_every": 40,
-        "update_actor_every": 1,
+        "update_actor_every": 2,
         "tau":1e-3,
         "batch_size": 64,
         "min_buf": 30000,
         "buffer_size": 100000,
         "discount_factor": 0.99,
         "n_ep_running_average": 50,
-        "N_episodes": 300,
+        "N_episodes": 400,
         "sigma_noise": 0.2,
         "mu_noise": 0.15,
     }
-    normal_run = False
+
+    normal_run = True
     if normal_run:
-        save(params)
+        #torch.manual_seed(100)
+        #np.random.seed(100)
+        
+        #save(params)
         actor, critic, rewards, steps = train_ddpg(params)
         
-        save(rewards, "rewards.pth")
-        save(steps, "steps.pth")
+        #save(rewards, "rewards.pth")
+        #save(steps, "steps.pth")
 
         save_model(actor, filename="neural-network-2-actor.pth")
         save_model(critic, filename="neural-network-2-critic.pth")
@@ -746,6 +743,9 @@ if __name__ == "__main__":
 
     chunking_run = False
     if chunking_run:
+        torch.manual_seed(100)
+        np.random.seed(100)
+
         save(params_chunking)
         actor, critic, rewards, steps = train_ddpg_chunking(params_chunking)
         
@@ -761,6 +761,7 @@ if __name__ == "__main__":
 
     run_comparison = False
     if run_comparison:
+
         torch.manual_seed(100)
         np.random.seed(100)
         random.seed(100)
@@ -780,7 +781,7 @@ if __name__ == "__main__":
         actor = load_model("neural-network-2-actor.pth")
         plot3d_grid(actor, critic, save=True)
 
-    compare_with_random = True
+    compare_with_random = False
     if compare_with_random:
         actor = load_model("neural-network-2-actor.pth")
         actor.eval()

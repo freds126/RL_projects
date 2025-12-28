@@ -93,154 +93,6 @@ def plot_rewards_steps(episode_reward_list, episode_number_of_steps, filename="r
     #plt.close(fig)
     plt.show()
 
-def train_ppo3(params):
-    import gym
-    import torch.optim as optim
-    from tqdm import trange
-    
-    # Import and initialize Lunar Lander Environment
-    env = gym.make('LunarLanderContinuous-v2')
-    env.reset()
-
-    # Parameters
-    N_episodes = params["N_episodes"]
-    discount_factor = params["discount_factor"]
-    n_ep_running_average = params["n_ep_running_average"]
-    m = len(env.action_space.high)  # dimensionality of the action
-    dim_state = len(env.observation_space.high)
-
-    nr_of_epochs = params["nr_of_epochs"]  # M in Algorithm 3
-    eps = params["eps"]  # ε for clipping
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    # Reward tracking
-    episode_reward_list = []
-    episode_number_of_steps = []
-
-    # Initialize networks
-    actor_net = Actor(dim_state, m).to(device)
-    critic_net = Critic(dim_state, 1).to(device)
-
-    # Optimizers
-    optimizer_critic = optim.Adam(critic_net.parameters(), lr=params["lr_critic"])
-    optimizer_actor = optim.Adam(actor_net.parameters(), lr=params["lr_actor"])
-
-    # Agent initialization
-    agent = PPOAgent(m, actor_net, device)
-
-    # Training process
-    EPISODES = trange(N_episodes, desc='Episode: ', leave=True)
-
-    for i in EPISODES:
-        # Reset environment
-        done, truncated = False, False
-        state = env.reset()[0]
-        total_episode_reward = 0.
-        t = 0
-        
-        # Episode buffer
-        states, actions, rewards = [], [], []
-        
-        # Collect trajectory (Algorithm 3, lines 6-10)
-        while not (done or truncated):
-            # Take action
-            action = agent.forward(state)
-            
-            # Get next state and reward
-            next_state, reward, done, truncated, _ = env.step(action)
-            
-            # Append to buffer
-            states.append(state)
-            actions.append(action)
-            rewards.append(reward)
-
-            # Update episode reward
-            total_episode_reward += reward
-
-            # Update state for next iteration
-            state = next_state
-            t += 1
-        
-        # Convert to tensors
-        states = torch.as_tensor(np.array(states), device=device, dtype=torch.float32)
-        actions = torch.as_tensor(np.array(actions), device=device, dtype=torch.float32)
-        
-        # Compute returns G_t (Algorithm 3, line 11)
-        G = np.zeros(len(rewards), dtype=np.float32)
-        running = 0
-        for j in reversed(range(len(rewards))):
-            running = rewards[j] + discount_factor * running
-            G[j] = running
-        G = torch.as_tensor(G, device=device, dtype=torch.float32)
-        
-        # Compute old policy log probabilities (Algorithm 3, line 13)
-        with torch.no_grad():
-            mu, std = actor_net(states)
-            pi_old = Normal(mu, std)
-            log_pi_old = pi_old.log_prob(actions).sum(-1)  # Sum over action dimensions
-        
-        # PPO training epochs (Algorithm 3, lines 14-17)
-        for epoch in range(nr_of_epochs):
-            # Get current value estimates
-            V = critic_net(states).squeeze()
-            
-            # Compute advantages (Algorithm 3, line 12)
-            # Note: We compute this inside the loop, but advantages are detached
-            # so they don't change during the epoch
-            with torch.no_grad():
-                adv = G - V
-                # Normalize advantages (common practice, improves stability)
-                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
-            
-            # Update Critic (Algorithm 3, line 15)
-            V = critic_net(states).squeeze()  # Recompute for gradient
-            loss_critic = nn.functional.mse_loss(G, V)
-            
-            optimizer_critic.zero_grad()
-            loss_critic.backward()
-            optimizer_critic.step()
-            
-            # Update Actor (Algorithm 3, line 16)
-            mu, std = actor_net(states)
-            pi = Normal(mu, std)
-            log_pi = pi.log_prob(actions).sum(-1)
-            
-            # Compute probability ratio
-            ratio = torch.exp(log_pi - log_pi_old)
-            
-            # Compute clipped objective
-            surr1 = ratio * adv
-            surr2 = torch.clamp(ratio, 1 - eps, 1 + eps) * adv
-            loss_actor = -torch.min(surr1, surr2).mean()
-            
-            optimizer_actor.zero_grad()
-            loss_actor.backward()
-            optimizer_actor.step()
-
-        # Append episode reward
-        episode_reward_list.append(total_episode_reward)
-        episode_number_of_steps.append(t)
-
-        # Update progress bar
-        if len(episode_reward_list) >= n_ep_running_average:
-            avg_reward = np.mean(episode_reward_list[-n_ep_running_average:])
-            avg_steps = np.mean(episode_number_of_steps[-n_ep_running_average:])
-        else:
-            avg_reward = np.mean(episode_reward_list)
-            avg_steps = np.mean(episode_number_of_steps)
-            
-        EPISODES.set_description(
-            f"Episode {i} - Reward/Steps: {total_episode_reward:.1f}/{t} - "
-            f"Avg. Reward/Steps: {avg_reward:.1f}/{avg_steps:.0f}"
-        )
-
-    # Close environment
-    env.close()
-    
-    return episode_reward_list, episode_number_of_steps
-
 def train_ppo(params):
     # Import and initialize Mountain Car Environment
     env = gym.make('LunarLanderContinuous-v3')
@@ -341,7 +193,6 @@ def train_ppo(params):
             loss_critic = torch.max(loss_critic1, loss_critic2)
 
             adv = (G - V).detach()
-            adv = (adv )
 
             # critic update
             loss_critic = nn.functional.mse_loss(G, V)
@@ -363,7 +214,6 @@ def train_ppo(params):
 
             surr1 = prob_ratio * adv
             surr2 = torch.clamp(prob_ratio, 1-eps, 1+eps) * adv
-            entropy = pi.entropy().mean()
 
             loss_actor = -(torch.min(surr1, surr2)).mean() 
             optimizer_actor.zero_grad()
@@ -433,7 +283,7 @@ def plot3d_grid(actor, critic, size=20, save=False):
 
     A = mu.clamp(-1, 1)
     V_grid = V.squeeze(-1).reshape(Ny, Nw)
-    A_grid = A[:, 0].reshape(Ny, Nw)          # choose action dim
+    A_grid = A[:, 1].reshape(Ny, Nw)          # choose action dim
 
     # ---- VALUE PLOT ----
     fig = plt.figure(figsize=(10, 7))
@@ -595,10 +445,10 @@ if __name__ == "__main__":
     if normal_run:
         save(params)
         critic, actor, rewards, steps = train_ppo(params)
-        save_model(critic, "neural-network-3-critic.pth")
-        save_model(actor, "neural-network-3-actor.pth")
+        #save_model(critic, "neural-network-3-critic.pth")
+        #save_model(actor, "neural-network-3-actor.pth")
 
-        plot_rewards_steps(rewards, steps, save=True)
+        #plot_rewards_steps(rewards, steps, save=True)
 
     run_comparison = False
     if run_comparison:

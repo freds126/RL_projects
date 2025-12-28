@@ -183,8 +183,8 @@ def plot3d_grid(model, size=20, save=False):
 
     Ny, Nw = 100, 150
 
-    y_vals = np.linspace(0.0, 1.5, Ny)
-    w_vals = np.linspace(-np.pi, np.pi, Nw)
+    y_vals = np.linspace(0.0, 2.5, Ny)
+    w_vals = np.linspace(-2*np.pi, 2*np.pi, Nw)
 
     Y, W = np.meshgrid(y_vals, w_vals, indexing = "ij")
 
@@ -704,7 +704,7 @@ if __name__ == '__main__':
         "n_ep_running_average": 50, # running average size
 
 
-        "BUFFER_SIZE": 15000,       # experience buffer size
+        "BUFFER_SIZE": 30000,       # experience buffer size
         "batch_size": 64,           # batch size
 
         "epsilon_max": 0.99,        # starting value/ max value of epsilon
@@ -766,17 +766,18 @@ if __name__ == '__main__':
         print("\n------------------- GREEDY AGENT -----------------------\n\n")
         check_solution(env, greedyAgent)
 
-    
+    savePath = "neural-network-1.pth"
     normal_run = True
     if normal_run:
         qnet, rewards, steps = train_dqn(params)
         plot_avg_rewards_n_steps(rewards, steps, 50, filename="", save=False)
+        save_model(qnet, savePath)
 
     dueling_run = False
     if dueling_run:
         qnet, rewards, steps = train_dueling_dqn(params)
         plot_avg_rewards_n_steps(rewards, steps, 50, filename="", save=False)
-
-    savePath = "neural-network-1.pth"
+        save_model(qnet, savePath)
+    
     #save_params(params)
-    #save_model(q_network, savePath)
+    

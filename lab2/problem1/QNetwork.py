@@ -25,6 +25,10 @@ class DuelingQNetwork(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x):
+        original_shape = x.shape
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+
         x = self.relu(self.input_layer(x))
         x = self.relu(self.hidden_layer(x))
 
@@ -32,5 +36,7 @@ class DuelingQNetwork(nn.Module):
         advantage = self.Adv_output_layer(x) 
 
         q = value + advantage - torch.mean(advantage, dim=1, keepdim=True)
+        if len(original_shape) == 1:
+            q = q.squeeze(0)
 
         return q
